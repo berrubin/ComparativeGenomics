@@ -10,19 +10,17 @@ class Gene:
         self.introns = []
         self.five_utrs = []
         self.three_utrs = []
-#        self.three_flank = []
-#        self.five_flank = []
         self.start = -1
         self.end = -1
         self.sequence = {}
-#        self.samples = []
         self.strand = strand
         self.species = gene_name[0:4]
         self.alts = {}
-        self.syn_count = -1
-        self.nsyn_count = -1
-        self.potent_syn
-        self.potent_nsyn
+        self.syn_count = -1 #PS
+        self.nsyn_count = -1 #PR
+        self.potent_syn = -1 #Tsil
+        self.potent_nsyn = -1 #Trepl
+        self.average_n = -1 #npop
         
     def add_cds(self, cds_list):
         self.cds = cds_list
@@ -120,9 +118,6 @@ class Gene:
         scaf_len = vcf_reader.contigs[self.scaf][1]
         right_flank_index = self.end
         left_flank_index = self.start
-#        sample_dic = {}
-#        for sample in vcf_reader.samples:
-#            sample_dic[sample] = Sample(sample)
         called_site_count = 0
         alt_dic = {}
         called_count = {}
@@ -138,20 +133,10 @@ class Gene:
             else:
                 alt_dic[rec.POS] = rec.ALT[0]
                 called_count[rec.POS] = rec.num_called
+        self.average_n = sum(called_count.values()) / len(called_count.values())
         self.alts = alt_dic
         self.syn_and_nsyn()
         self.potential_sites()
-
-
-                
-#                    self.add_site_to_samples(rec, sample_dic, rec.POS)
-#                else:
-#                    self.add_site_to_samples(rec, sample_dic, rec.POS)
-#            print rec.REF
-#            print rec.ALT
-#            print rec.num_called
-#            for s in rec.samples:
-#                print s.data.GT
 
     def potential_sites(self):
         potent_dic = utils.potent_dic()
@@ -178,19 +163,4 @@ class Gene:
                 for s in vcf_rec.samples:
                     sample_dic[s.sample].add_site(index, vcf_rec.REF, vcf_rec.ALT, s.data.GT)
             
-
-class Sample:
-    def __init__(self, mysample):
-        self.sample = mysample
-        self.genotypes = {}
-
-    def add_site(self, index, ref_allele, alt_allele, genotype):
-        self.genotypes[index] = Genotype(ref_allele, alt_allele, genotype)
-
-class Genotype:
-    def __init__(self, ref_allele, alt_allele, genotype):
-        self.ref = ref_allele
-        self.alt = alt_allele
-        self.gt = genotype
-
 

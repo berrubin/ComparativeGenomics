@@ -35,7 +35,8 @@ def get_species_data(target_species):
     for rec in reader:
         cds_dic[rec.id[:-3]] = str(rec.seq)
 
-    gff_file = gffParser(open("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform_scaf_5_1M.gff3" % (target_species, target_species), 'rU'))
+#    gff_file = gffParser(open("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform_scaf_5_1M.gff3" % (target_species, target_species), 'rU'))
+    gff_file = gffParser(open("/Genomics/kocherlab/berubin/official_release/%s/%s_testset.gff3" % (target_species, target_species), 'rU'))
     gene_dic = gff_file.geneDict()
     gene_objects = {}
     for gene_name in gene_dic.keys():
@@ -48,43 +49,10 @@ def get_species_data(target_species):
     gene_objects = get_utr_dic(gff_file, gene_dic, "five", gene_objects)
     make_cds_sequences(gene_objects, cds_dic)
     return gene_objects
-    """
-#        return get_cds_dic(gff_file, gene_dic, gene_objects)
-    elif data_type == "introns":
-        return get_introns_dic(gff_file, gene_dic)
-    elif data_type == "five_prime_utrs":
-        return get_utr_dic(gff_file, gene_dic, "five")
-    elif data_type == "three_prime_utrs":
-        return get_utr_dic(gff_file, gene_dic, "three")
-    elif data_type == "three_flank":
-        return get_flank_dic(gff_file, gene_dic, "three")
-    elif data_type == "five_flank":
-        return get_flank_dic(gff_file, gene_dic, "five")
-    """
 
 def make_cds_sequences(gene_objects, cds_dic):
     for gene in gene_objects.values():
         gene.get_cds_sequence(cds_dic)
-
-def get_flank_dic(gff_file, gene_dic, prime_flank):
-    FLANK_SIZE = 3000
-    flank_dic = {}
-    for gene_name in gene_dic.keys():
-        gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
-        if prime_flank == "three":
-            if gene_deets["strand"] == -1:
-                flank_dic[gene_name] = (gene_deets["start"] - FLANK_SIZE, gene_deets["start"])
-            elif gene_deets["strand"] == 1:
-                flank_dic[gene_name] = (gene_deets["end"], gene_deets["end"] + FLANK_SIZE)
-        elif prime_flank == "five":
-            if gene_deets["strand"] == -1:
-                flank_dic[gene_name] = (gene_deets["end"], gene_deets["end"] + FLANK_SIZE)
-            elif gene_deets["strand"] == 1:
-                flank_dic[gene_name] = (gene_deets["start"]- FLANK_SIZE, gene_deets["start"])
-        if flank_dic[gene_name][0] < 0:
-            flank_dic[gene_name] = (0, flank_dic[gene_name][1])
-    return flank_dic
-
 
 def get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic):
     for gene_name in gene_dic.keys():
@@ -141,8 +109,43 @@ def get_cds_dic(gff_file, gene_dic, gene_objects):
             gene_objects[gene_name].add_cds(sorted_tuples)
     return gene_objects
 
+def mk_test(inspecies, outspecies, align_dir):
+    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho", 'rU')
+    in_gene_dic = get_species_data(inspecies)
+    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (inspecies, inspecies))
+    for gene_name, gene_object in in_gene_dic.items():
+        gene_object.get_genotypes(reader, 3000)
+    
+    out_gene_dic = get_species_data(outspecies)
+    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (outspecies, outspecies))
+    for gene_name, gene_object in out_gene_dic.items():
+        gene_object.get_genotypes(reader, 3000)
+
+    mk_table = open("%s_%s_mk_table.txt", 'w')
+    mk_table.write("geneID\tPR\tFR\tPS\tFS\tTsil\tTrepl\tnout\tnpop\n")
+    for og_num in ortho_dic.keys():
+        if ortho_dic[og_num].keys().count(inspecies) == 1 and ortho_dic[og_num].keys().count(outspecies) == 1:
+            reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num))
+            for rec in reader:
+                if rec.id[0:4] == inspecies:
+                    inseq = str(rec.seq)
+                    inseq_name = rec.id
+                elif rec.id[0:4] == outspecies:
+                    outseq = str(rec.seq)
+                    outseq_name = rec.id
+            fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
+            in_poly_syn = in_gene_dic[inseq_name].syn_count
+            in_poly_nsyn = in_gene_dic[inseq_name].nsyn_count
+            in_potent_syn = in_gene_dic[inseq_name].potent_syn
+            in_potent_nsyn = in_gene_dic[inseq_name].potent_nsyn
+            in_n_size = in_gene_dic[inseq_name].average_n
+            mk_table.write("\t".join([og_num, in_poly_nsyn, fix_nsyn, in_poly_syn, fix_syn, in_potent_syn, in_potent_nsyn, "1", in_n_size]) + "\n")
+    mk_table.close()
+            
 
 def potential_changes_dict():
+    #just ran once to create dictionary of the potential syn and nsyn 
+    #sites for each codon. That dictionary is returned by potent_dic() below
     #https://github.com/a1ultima/hpcleap_dnds/blob/master/py/scripts/changes.py
 
     """ Generate a dictionary, with S and N pre-calculated for all 
