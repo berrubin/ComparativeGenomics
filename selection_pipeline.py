@@ -18,13 +18,13 @@ import paml_tests
 
 parser = OptionParser()
 
-parser.add_option("-p", "--num_threads", dest = "num_threads", type = int)
+parser.add_option("-p", "--num_threads", dest = "num_threads", type = int, default = 1)
 parser.add_option("-m", "--min_og_group", dest = "min_og_group", type = int)
 parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int)
 parser.add_option("-o", "--prefix", dest = "prefix", type = str)
 parser.add_option("-b", "--base_dir", dest = "base_dir", type = str)
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int)
-parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, defauly = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
+parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
 parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree")
 (options, args) = parser.parse_args()
 
@@ -223,11 +223,11 @@ def prank_align_worker(og_file, outdir, use_backbone):
     og_num = cur_og.split("_")[2].split(".fa")[0]
     if use_backbone:
         rename_tree(og_file, "%s/og_%s.tree" % (outdir, og_num))
-        cmd = ["/Genomics/kocherlab/berubin/local/src/prank/prank", "-d=%s" % og_file, "-o=%s/og_cds_%s" % (outdir, og_num), "-codon", "-t=%s/og_%s.tree" % (outdir,og_num)]
+        cmd = ["/Genomics/kocherlab/berubin/local/src/prank/prank", "-d=%s" % og_file, "-o=%s/og_cds_%s" % (outdir, og_num), "-codon", "-F", "-t=%s/og_%s.tree" % (outdir,og_num)]
         subprocess.call(cmd)
         gblock("%s/og_cds_%s.1.fas" % (outdir, og_num))
     else:
-        cmd = ["/Genomics/kocherlab/berubin/local/src/prank/prank", "-d=%s" % og_file, "-o=%s/og_cds_%s" % (outdir, og_num), "-codon"]
+        cmd = ["/Genomics/kocherlab/berubin/local/src/prank/prank", "-d=%s" % og_file, "-o=%s/og_cds_%s" % (outdir, og_num), "-codon", "-F"]
         subprocess.call(cmd)
 
 
@@ -279,26 +279,23 @@ def get_cds():
         seq_dic[species][rec.id] = str(rec.seq)
     return seq_dic
 
-def write_orthos(ortho_file, seq_dic, min_og_size, paras_allowed, outdir):
+def write_orthos(ortho_file, seq_dic, paras_allowed, outdir):
     #read/parse orthology file and write files containing all sequences
     #also create an index file that lists the number of taxa in each OG
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
-    ref_file = open("%s/%s_taxa_%s.index" % (options.base_dir, options.prefix, min_og_size), 'w')
-    ref_file.write("#og\tnum_taxa\n")
+    ref_file = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'w')
+    ref_file.write("#og\tnum_taxa\tnum_paras\n")
     counter = 0
     for line in ortho_file:
         if line.startswith("#"):
             continue
         cur_line = line.split()
-        if int(cur_line[0]) < min_og_size:
-            continue
-        if int(cur_line[0]) > min_og_size:
-            continue
+        num_paras = int(cur_line[1]) - int(cur_line[0])
         if int(cur_line[0]) != int(cur_line[1]):
             if not paras_allowed:
                 continue
-        ref_file.write("%s\t%s\n" % (counter, cur_line[0]))
+        ref_file.write("%s\t%s\t%s\n" % (counter, cur_line[0], num_paras))
 
         outfile = open("%s/og_cds_%s.fa" % (outdir, counter), 'w')
         for seqs in cur_line[3:]:
@@ -331,14 +328,17 @@ def concatenate_for_raxml(input_dir, outfile):
         writer.write("%s\n%s\n" % (species, "".join(seq_list)))
     writer.close()
 
-def read_ortho_index(min_taxa):
+def read_ortho_index(min_taxa, paras_allowed):
     #get list of all of the OG's with the minumum taxa
-    reader = open("%s/%s_taxa_%s.index" % (options.base_dir, options.prefix, options.min_taxa), 'rU')
+    reader = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'rU')
     og_list = []
     for line in reader:
         if line.startswith("#"):
             continue
         cur_line = line.split()
+        if not paras_allowed:
+            if int(cur_line[2]) > 0:
+                continue
         if int(cur_line[1]) >= min_taxa:
             og_list.append(int(cur_line[0]))
     return og_list
@@ -360,15 +360,19 @@ def main():
         os.mkdir(options.base_dir)
     reader = open(options.ortho_file, 'rU')
     seq_dic = get_cds()
-    write_orthos(reader, seq_dic, options.min_taxa, False, "%s/%s_taxa_%s/" % (options.base_dir, options.prefix, options.min_taxa))
-    og_list = read_ortho_index(options.min_taxa)[:100]
+#    write_orthos(reader, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix))
+    paras_allowed = False
+#    og_list = read_ortho_index(options.min_taxa, paras_allowed)[:100]
+#    print og_list
     use_backbone = False
-    prank_align(og_list, "%s/%s_taxa_%s/" % (options.base_dir, options.prefix, options.min_taxa), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone)
-    concatenate_for_raxml("%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix))
+#    prank_align(og_list, "%s/%s_taxa_%s/" % (options.base_dir, options.prefix, options.min_taxa), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone)
+#    concatenate_for_raxml("%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix))
     #then run raxml to create a backbone phylogeny
-    og_list = read_ortho_index(options.min_taxa)
+    og_list = read_ortho_index(options.min_taxa, paras_allowed)
+    og_list = [2110]
 #    og_list = limit_list(og_list, options.min_og_group, options.max_og_group)
-    prank_align(og_list, "%s/%s_taxa_%s/" % (options.base_dir, options.prefix, options.min_taxa), "%s/%s_prank" % (options.base_dir, options.prefix))
+    use_backbone = True
+    prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone)
 
     foreground = "social"
     test_type = "model_d"
