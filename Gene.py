@@ -1,4 +1,5 @@
 import utils
+import changes
 import collections
 from Bio import Seq
 
@@ -16,6 +17,7 @@ class Gene:
         self.strand = strand
         self.species = gene_name[0:4]
         self.alts = {}
+        self.refs = {}
         self.syn_count = -1 #PS
         self.nsyn_count = -1 #PR
         self.potent_syn = -1 #Tsil
@@ -75,31 +77,42 @@ class Gene:
     def syn_and_nsyn(self):
         syn_count = 0
         nsyn_count = 0
+        print self.name
+        print self.start
+        
         for index in self.alts.keys():
             old_codon = ""
             new_codon = []
             if index in self.cds.keys():
-
+                if len(self.alts[index]) != len(self.refs[index]):
+                    nsyn_count += 1
+                    continue
+                if len(self.alts[index]) < 2:
+                    continue
+                variant_len = len(self.alts[index])
                 if self.strand == 1:
-                    cds_index = self.cds.keys().index(index)# - self.cds.keys()[0]
+                    cds_index = self.cds.keys().index(index)
                     codon_start = index - (cds_index % 3)
-                    for x in range(3):
+                    
+                    for x in range(3 + ((variant_len / 3) * 3)):
                         old_codon += self.cds[codon_start + x]
                         new_codon.append(self.cds[codon_start + x])
                     new_codon[cds_index % 3] = str(self.alts[index])
+                    for x in range(variant_len):
+                        new_codon[cds_index % 3 + x] = str(self.alts[index])[x]
                     old_codon = Seq.Seq(old_codon)
                     new_codon = Seq.Seq("".join(new_codon))
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
-                    codon_start = index + (cds_index % 3)
-                    for x in range(3):
+                    codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
+                    for x in range(3 + ((variant_len / 3) * 3)):
                         old_codon += self.cds[codon_start - x]
                         new_codon.append(self.cds[codon_start - x])
                     new_codon[cds_index % 3] = str(self.alts[index])
+                    for x in range(variant_len):
+                        new_codon[cds_index % 3 + x] = str(self.alts[index])[variant_len - x - 1]
                     old_codon = Seq.Seq(old_codon).complement()
                     new_codon = Seq.Seq("".join(new_codon)).complement()
-                    print new_codon
-                    print old_codon
                 if str(new_codon.translate()) == str(old_codon.translate()):
                     syn_count += 1
                 elif len(new_codon) % 3 == 0:
@@ -112,8 +125,6 @@ class Gene:
 
 
     def get_genotypes(self, vcf_reader, flank_size):
-        print self.name
-        print self.start
 #        print self.sequence
         scaf_len = vcf_reader.contigs[self.scaf][1]
         right_flank_index = self.end
@@ -121,25 +132,34 @@ class Gene:
         called_site_count = 0
         alt_dic = {}
         called_count = {}
+        ref_dic = {}
         for rec in vcf_reader.fetch(self.scaf, left_flank_index, right_flank_index):
-            if rec.num_called < 2:
+            if rec.num_called < 4:
                 continue
-            if rec.num_called == rec.num_hom_ref:
+            elif rec.num_called == rec.num_hom_ref:
                 called_count[rec.POS] = rec.num_called
                 continue
-            if rec.num_called == rec.num_het or rec.num_called == rec.num_hom_alt:
+            elif rec.num_called == rec.num_het or rec.num_called == rec.num_hom_alt:
                 self.sequence[rec.POS] = "N"
+                continue
+            half_missing = 0
+            for s in rec.samples:
+                if str(s.data.GT) in ["./1", "./0", "1/.", "0/."]:
+                    half_missing += 1
+            if (rec.num_called - half_missing) == rec.num_hom_alt or (rec.num_called - half_missing) == rec.num_het:
                 continue
             else:
                 alt_dic[rec.POS] = rec.ALT[0]
+                ref_dic[rec.POS] = rec.REF
                 called_count[rec.POS] = rec.num_called
         self.average_n = sum(called_count.values()) / len(called_count.values())
         self.alts = alt_dic
+        self.refs = ref_dic
         self.syn_and_nsyn()
         self.potential_sites()
 
     def potential_sites(self):
-        potent_dic = utils.potent_dic()
+        potent_dic = changes.potent_dic()
         cur_cds = "".join(self.cds.values())
         if self.strand == -1:
             cur_cds = str(Seq.Seq(cur_cds).reverse_complement())
