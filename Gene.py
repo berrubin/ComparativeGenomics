@@ -78,23 +78,29 @@ class Gene:
         syn_count = 0
         nsyn_count = 0
         print self.name
-        print self.start
-        
+        if self.name != "LMAL_05156":
+            return
         for index in self.alts.keys():
+#            print self.alts
             old_codon = ""
             new_codon = []
             if index in self.cds.keys():
+                print self.alts[index]
                 if len(self.alts[index]) != len(self.refs[index]):
                     nsyn_count += 1
                     continue
-                if len(self.alts[index]) < 2:
-                    continue
+#                if len(self.alts[index]) < 2:
+#                    continue
                 variant_len = len(self.alts[index])
                 if self.strand == 1:
                     cds_index = self.cds.keys().index(index)
                     codon_start = index - (cds_index % 3)
-                    
-                    for x in range(3 + ((variant_len / 3) * 3)):
+                    leftover_len = variant_len - (3 - cds_index % 3)
+                    additional_len = 3 * (leftover_len / 3)
+                    if leftover_len % 3 > 0:
+                        additional_len += 3
+#                    for x in range(3 + ((variant_len / 3) * 3) + variant_len % 3 * 3):
+                    for x in range(3+additional_len):
                         old_codon += self.cds[codon_start + x]
                         new_codon.append(self.cds[codon_start + x])
                     new_codon[cds_index % 3] = str(self.alts[index])
@@ -105,7 +111,13 @@ class Gene:
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
                     codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
-                    for x in range(3 + ((variant_len / 3) * 3)):
+                    leftover_len = variant_len - (3 - cds_index % 3)
+                    additional_len = 3 * (leftover_len / 3)
+                    if leftover_len % 3 > 0:
+                        additional_len += 3
+
+#                    for x in range(3 + ((variant_len / 3) * 3)):
+                    for x in range(3 + additional_len):
                         old_codon += self.cds[codon_start - x]
                         new_codon.append(self.cds[codon_start - x])
                     new_codon[cds_index % 3] = str(self.alts[index])
@@ -113,13 +125,35 @@ class Gene:
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[variant_len - x - 1]
                     old_codon = Seq.Seq(old_codon).complement()
                     new_codon = Seq.Seq("".join(new_codon)).complement()
-                if str(new_codon.translate()) == str(old_codon.translate()):
-                    syn_count += 1
-                elif len(new_codon) % 3 == 0:
-                    nsyn_count += 1
-                else:
+                print new_codon
+                print old_codon
+                old_aa = str(old_codon.translate())
+                new_aa = str(new_codon.translate())
+                print new_aa
+                print old_aa
+
+                temp_nsyn = 0
+                for aa in range(len(new_aa)):
+                    if old_aa[aa] != new_aa[aa]:
+                        nsyn_count += 1
+                        temp_nsyn += 1
+                        print "nsyn++"
+                        print nsyn_count
+                temp_syn = 0
+                for nuc in range(len(str(new_codon))):
+                    if str(old_codon)[nuc] != str(new_codon)[nuc]:
+                        syn_count += 1
+                        temp_syn 
+                        print "syn++"
+                        print syn_count
+                syn_count = syn_count - temp_nsyn
+#                if str(new_codon.translate()) == str(old_codon.translate()):
+#                    syn_count += 1
+#                elif len(new_codon) % 3 == 0:
+#                    nsyn_count += 1
+#                else:
                     #This must be a frameshift mutation which is a disaster and is, therefore, probably not a real variant so don't count it
-                    continue
+#                    continue
         self.syn_count = syn_count
         self.nsyn_count = nsyn_count
 

@@ -1,8 +1,11 @@
 import copy
 import vcf
 from Bio import SeqIO
+from Bio import Seq
 from Gene import Gene
 from gff import gffParser
+import pickle
+import os
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
@@ -11,8 +14,8 @@ def ortho_reader(orthofile):
     #OG index (line number in orthofile) as keys.
     reader = open(orthofile, 'rU')
     ortho_dic = {}
+    counter = 0
     for line in reader:
-        counter = 0
         if line.startswith("#"):
             continue
         gene_dic = {}
@@ -83,7 +86,6 @@ def get_introns_dic(gff_file, gene_dic, gene_objects):
     intron_dic = {}
     cds_dic = get_cds_dic(gff_file, gene_dic)
     for gene_name in cds_dic.keys():
-        print gene_name
         cds_tuples = []
         sorted_tuples = cds_dic[gene_name]
         intron_list = []
@@ -97,7 +99,6 @@ def get_introns_dic(gff_file, gene_dic, gene_objects):
 def get_cds_dic(gff_file, gene_dic, gene_objects):
     out_dic = {}
     for gene_name in gene_dic.keys():
-        print gene_name
         mrna_list = gff_file.getmRNA(gene_dic[gene_name][0], gene_name) #only one mRNA because working with longest iso
         for mrna_dic in mrna_list:
             cds_dic = gff_file.getCDS(gene_dic[gene_name][0], mrna_dic["Name"])
@@ -110,37 +111,49 @@ def get_cds_dic(gff_file, gene_dic, gene_objects):
             gene_objects[gene_name].add_cds(sorted_tuples)
     return gene_objects
 
+def gene_vcf_dic(species):
+    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
+        print "Reading %s pickle" % species
+        gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
+    else:
+        gene_dic = get_species_data(species)
+        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
+        for gene_name, gene_object in gene_dic.items():
+            gene_object.get_genotypes(reader, 3000)
+        pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
+    return gene_dic
+    
+
 def mk_test(inspecies, outspecies, align_dir):
     ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-    in_gene_dic = get_species_data(inspecies)
-    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (inspecies, inspecies))
-    for gene_name, gene_object in in_gene_dic.items():
-        gene_object.get_genotypes(reader, 3000)
-    
-    out_gene_dic = get_species_data(outspecies)
-    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (outspecies, outspecies))
-    for gene_name, gene_object in out_gene_dic.items():
-        gene_object.get_genotypes(reader, 3000)
+    in_gene_dic = gene_vcf_dic(inspecies)
+    out_gene_dic = gene_vcf_dic(outspecies)
+#    out_gene_dic = get_species_data(outspecies)
+#    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (outspecies, outspecies))
+#    for gene_name, gene_object in out_gene_dic.items():
+#        gene_object.get_genotypes(reader, 3000)
 
-    mk_table = open("%s_%s_mk_table.txt", 'w')
+    mk_table = open("%s_%s_mk_table.txt" % (inspecies, outspecies), 'w')
     mk_table.write("geneID\tPR\tFR\tPS\tFS\tTsil\tTrepl\tnout\tnpop\n")
     for og_num in ortho_dic.keys():
         if ortho_dic[og_num].keys().count(inspecies) == 1 and ortho_dic[og_num].keys().count(outspecies) == 1:
-            reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num))
+            if og_num != 2110:
+                continue
+            reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
             for rec in reader:
                 if rec.id[0:4] == inspecies:
                     inseq = str(rec.seq)
-                    inseq_name = rec.id
+                    inseq_name = rec.id[:-3]
                 elif rec.id[0:4] == outspecies:
                     outseq = str(rec.seq)
-                    outseq_name = rec.id
+                    outseq_name = rec.id[:-3]
             fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
             in_poly_syn = in_gene_dic[inseq_name].syn_count
             in_poly_nsyn = in_gene_dic[inseq_name].nsyn_count
             in_potent_syn = in_gene_dic[inseq_name].potent_syn
             in_potent_nsyn = in_gene_dic[inseq_name].potent_nsyn
             in_n_size = in_gene_dic[inseq_name].average_n
-            mk_table.write("\t".join([og_num, in_poly_nsyn, fix_nsyn, in_poly_syn, fix_syn, in_potent_syn, in_potent_nsyn, "1", in_n_size]) + "\n")
+            mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(in_n_size)]) + "\n")
     mk_table.close()
 
 
@@ -303,23 +316,23 @@ def count_sub_types(seq1, seq2):
     for x in range(len(seq1)):
         if seq1[x] in empty_chars or seq2[x] in empty_chars:
             continue
-        total_count += 1
+        n_total_count += 1
         if seq1[x] == seq2[x]:
-            same_count += 1
+            n_same_count += 1
         elif seq1[x] != seq2[x]:
-            diff_count += 1
-    p_seq1 = seq1.replace("-", "N").translate()
-    p_seq2 = seq2.replace("-", "N").translate()
+            n_diff_count += 1
+    p_seq1 = str(Seq.Seq(seq1.replace("-", "N")).translate())
+    p_seq2 = str(Seq.Seq(seq2.replace("-", "N")).translate())
     p_same_count = 0
     p_diff_count = 0
     p_total_count = 0
-    for x in range(len(seq1)):
-        if seq1[x] in empty_chars or seq2[x] in empty_chars:
+    for x in range(len(p_seq1)):
+        if p_seq1[x] in empty_chars or p_seq2[x] in empty_chars:
             continue
         p_total_count += 1
-        if seq1[x] == seq2[x]:
+        if p_seq1[x] == p_seq2[x]:
             p_same_count += 1
-        elif seq1[x] != seq2[x]:
+        elif p_seq1[x] != p_seq2[x]:
             p_diff_count += 1
     nsyns = p_diff_count
     syns = n_diff_count - nsyns
