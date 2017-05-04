@@ -1,3 +1,6 @@
+import multiprocessing
+from multiprocessing import Pool
+from potpour import Worker
 import copy
 import vcf
 from Bio import SeqIO
@@ -6,6 +9,17 @@ from Gene import Gene
 from gff import gffParser
 import pickle
 import os
+import shutil
+import subprocess
+from glob import glob
+from Bio.Phylo.PAML import codeml
+#from Bio.Seq import Seq
+import ete3
+from ete3 import PhyloTree
+from Bio.Phylo.PAML.chi2 import cdf_chi2
+from scipy.stats import chisqprob
+import statsmodels.stats.multitest as smm
+
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
@@ -166,9 +180,10 @@ def check_for_stop(seq):
         x += 3
     return False
 
-def trim_phylo(taxa_list, fore_list, orthogroup, outdir):
+def trim_phylo(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for PAML analysis tree
-    tree = PhyloTree(options.tree_file)
+#    tree = PhyloTree(options.tree_file)
+    tree = PhyloTree(phylogeny_file)
     tree.prune(taxa_list)
     tree.unroot()
     tree_str = tree.write(format = 5)
@@ -178,13 +193,13 @@ def trim_phylo(taxa_list, fore_list, orthogroup, outdir):
     outfile.write(tree_str)
     outfile.close()
 
-def rename_tree(seqfile, outname):
+def rename_tree(seqfile, outname, phylogeny_file):
     #trims taxa and renames tips to match sequence names (mostly for prank)
     name_dic = {}
     reader = SeqIO.parse(seqfile, format = 'fasta')
     for rec in reader:
         name_dic[rec.id[0:4]] = rec.id
-    tree = PhyloTree(options.tree_file)
+    tree = PhyloTree(phylogeny_file)
     tree.prune(name_dic.keys())
     tree_str = tree.write(format = 5)
     for k, v in name_dic.items():
@@ -193,7 +208,7 @@ def rename_tree(seqfile, outname):
     outfile.write(tree_str)
     outfile.close()
 
-def prep_paml_files(orthogroup, indir, outdir, foreground):
+def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file):
     #formats fasta and tree files for PAML analysis
     tree_prep = True
     fore_list = []
@@ -215,7 +230,7 @@ def prep_paml_files(orthogroup, indir, outdir, foreground):
         outfile.write("%s\n%s\n" % (species[0:4], sequence))
     outfile.close()
     if tree_prep:
-        trim_phylo(taxa_list, fore_list, orthogroup, outdir)
+        trim_phylo(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
     else:
         shutil.copy("/Genomics/kocherlab/berubin/annotation/orthology/model_d.tree", "%s/og_%s.tree" % (outdir, orthogroup))
 
@@ -271,7 +286,7 @@ def read_frees(indir):
                 continue
         og_dnds_dic[cur_og] = dnds_dic
 
-def paml_test(og_list, foreground, test_type, indir, outdir):
+def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads):
     #performs paml test on all OG's in list
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -280,14 +295,14 @@ def paml_test(og_list, foreground, test_type, indir, outdir):
     result_queue = multiprocessing.Queue()
     for cur_og in og_list:
         if test_type == "model_d":
-            prep_paml_files(cur_og, indir, outdir, "model_d")
+            prep_paml_files(cur_og, indir, outdir, "model_d", phylogeny_file)
         elif test_type == "free":
-            prep_paml_files(cur_og, indir, outdir, "free")
+            prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file)
         else:
-            prep_paml_files(cur_og, indir, outdir, foreground)
+            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file)
         work_queue.put([cur_og, outdir])
     jobs = []
-    for i in range(options.num_threads):
+    for i in range(num_threads):
         if test_type == "bs":
             worker = Worker(work_queue, result_queue, paml_tests.branch_site_worker)
         elif test_type == "branch":
@@ -339,12 +354,12 @@ def count_sub_types(seq1, seq2):
     return syns, nsyns
 
 
-def prank_align_worker(og_file, outdir, use_backbone):
+def prank_align_worker(og_file, outdir, use_backbone, phylogeny_file):
     #the worker method for multiprocessing the prank alignments
     cur_og = og_file.split("/")[-1]
     og_num = cur_og.split("_")[2].split(".fa")[0]
     if use_backbone:
-        rename_tree(og_file, "%s/og_%s.tree" % (outdir, og_num))
+        rename_tree(og_file, "%s/og_%s.tree" % (outdir, og_num), phylogeny_file)
         cmd = ["/Genomics/kocherlab/berubin/local/src/prank/prank", "-d=%s" % og_file, "-o=%s/og_cds_%s" % (outdir, og_num), "-codon", "-F", "-t=%s/og_%s.tree" % (outdir,og_num)]
         subprocess.call(cmd)
         gblock("%s/og_cds_%s.1.fas" % (outdir, og_num))
@@ -358,7 +373,7 @@ def gblock(inalignment):
     cmd = ["/Genomics/kocherlab/berubin/local/src/Gblocks_0.91b/Gblocks", inalignment, "-t=c", "-b5=h"]
     subprocess.call(cmd)
 
-def prank_align(og_list, indir, outdir, use_backbone): 
+def prank_align(og_list, indir, outdir, use_backbone, phylogeny_file, num_threads): 
     #run prank alignments
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -367,9 +382,9 @@ def prank_align(og_list, indir, outdir, use_backbone):
     result_queue = multiprocessing.Queue()
     for og in og_list:
         og_file = "%s/og_cds_%s.fa" % (indir, og)
-        work_queue.put([og_file, outdir, use_backbone])
+        work_queue.put([og_file, outdir, use_backbone, phylogeny_file])
     jobs = []
-    for i in range(options.num_threads):
+    for i in range(num_threads):
         worker = Worker(work_queue, result_queue, prank_align_worker)
         jobs.append(worker)
         worker.start()
@@ -401,15 +416,17 @@ def get_cds():
         seq_dic[species][rec.id] = str(rec.seq)
     return seq_dic
 
-def write_orthos(ortho_file, seq_dic, paras_allowed, outdir):
+def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
     #read/parse orthology file and write files containing all sequences
     #also create an index file that lists the number of taxa in each OG
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
-    ref_file = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'w')
+#    ref_file = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'w')
+    ref_file = open(indexfile, 'w')
     ref_file.write("#og\tnum_taxa\tnum_paras\n")
     counter = 0
-    for line in ortho_file:
+    reader = open(ortho_file, 'rU')
+    for line in reader:
         if line.startswith("#"):
             continue
         cur_line = line.split()
@@ -450,9 +467,10 @@ def concatenate_for_raxml(input_dir, outfile):
         writer.write("%s\n%s\n" % (species, "".join(seq_list)))
     writer.close()
 
-def read_ortho_index(min_taxa, paras_allowed):
+def read_ortho_index(index_file, min_taxa, paras_allowed):
     #get list of all of the OG's with the minumum taxa
-    reader = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'rU')
+#    reader = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'rU')
+    reader = open(index_file, 'rU')
     og_list = []
     for line in reader:
         if line.startswith("#"):
