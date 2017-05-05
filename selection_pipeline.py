@@ -23,18 +23,19 @@ ANC_SOLITARY = ["Nmel", "Dnov"]
 POLYMORPHIC = ["LCAL", "LALB"]
 
 def main():
-
+    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
+    utils.hka_test("LLEU", "LLEU", "flank", ortho_dic)
     if not os.path.isdir(options.base_dir):
         os.mkdir(options.base_dir)     #create working directory
     seq_dic = utils.get_cds() #get coding sequences from all species
     #store name of orthology index file
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
     #write fastas for ALL orthologous groups
-    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
+#    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
     paras_allowed = False #do not include OG's with paralogs
     #get a list of the first 100 genes with min_taxa (should always be all
     #of the available species) for making the phylogeny
-    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)[0:100]
+#    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)[0:100]
     use_backbone = False #do not use a phylogeny to align these first 100 genes
     #align first 100 genes
 #    utils.prank_align(og_list, "%s/%s_taxa_%s/" % (options.base_dir, options.prefix, options.min_taxa), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone, "nophylogeny", options.num_threads)
@@ -44,7 +45,7 @@ def main():
     #then run raxml to create a backbone phylogeny
     #raxmlHPC-PTHREADS-SSE3 -f a -x 12345 -p 12345 -# 100 -m GTRGAMMA -s %s/%s.afa % (options.base_dir, options.prefix) -T 20
     #get list of all genes without paralogs
-    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+#    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
 #    og_list = utils.limit_list(og_list, options.min_og_group, options.max_og_group)
     use_backbone = True #use phylogeny to align these genes
     #align non-paralogous genes
@@ -64,7 +65,7 @@ def main():
 #    paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), phylogeny_file, options.num_threads)
 #    read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type))
 #    test_lrt("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type))
-#    utils.mk_test("LMAL", "LLEU", "%s/%s_prank" % (options.base_dir, options.prefix))
+#    utils.mk_test("LMAL", "LLEU", "%s/%s_prank" % (options.base_dir, options.prefix), options.num_threads)
 
 if __name__ == '__main__':
     main()

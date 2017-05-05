@@ -1,3 +1,4 @@
+from Bio.Align.Applications import MuscleCommandline
 import multiprocessing
 from multiprocessing import Pool
 from potpour import Worker
@@ -19,12 +20,14 @@ from ete3 import PhyloTree
 from Bio.Phylo.PAML.chi2 import cdf_chi2
 from scipy.stats import chisqprob
 import statsmodels.stats.multitest as smm
-
+from Bio.SeqRecord import SeqRecord
+from Bio import AlignIO
+from StringIO import StringIO
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
     #Lower level dictionaries have keys of species codes and 
-    #values of gene names. Upper level dictionaries have the
+    #values of lists of gene names. Upper level dictionaries have the
     #OG index (line number in orthofile) as keys.
     reader = open(orthofile, 'rU')
     ortho_dic = {}
@@ -38,7 +41,9 @@ def ortho_reader(orthofile):
         seq_count = int(cur_line[1])
         for gene in cur_line[3:]:
             cur_species = gene[0:4]
-            gene_dic[cur_species] = gene
+            if cur_species not in gene_dic.keys():
+                gene_dic[cur_species] = []
+            gene_dic[cur_species].append(gene)
         ortho_dic[counter] = gene_dic
         counter += 1
     return ortho_dic
@@ -71,6 +76,9 @@ def get_species_data(target_species):
 def make_cds_sequences(gene_objects, cds_dic):
     for gene in gene_objects.values():
         gene.get_cds_sequence(cds_dic)
+        gene.get_flank_sequence(3000)
+        gene.get_utr_sequence()
+        gene.get_intron_sequence()
 
 def get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic):
     for gene_name in gene_dic.keys():
@@ -125,6 +133,48 @@ def get_cds_dic(gff_file, gene_dic, gene_objects):
             gene_objects[gene_name].add_cds(sorted_tuples)
     return gene_objects
 
+def gene_vcf_dic_threads(species, num_threads, gene_dic):
+    work_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    vcf_file = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species)
+#        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
+    for gene_name, gene_object in gene_dic.items():
+        print gene_name
+        work_queue.put([gene_object, vcf_file, 3000])
+    print str(work_queue)
+    jobs = []
+    for i in range(num_threads):
+        print "make worker"
+        worker = Worker(work_queue, result_queue, gene_vcf_dic_worker)
+        jobs.append(worker)
+        worker.start()
+    try:
+        for j in jobs:
+            j.join()
+    except KeyboardInterrupt:
+        for j in jobs:
+            j.terminate()
+            j.join()
+            
+            #gene_object.get_genotypes(reader, 3000)
+#        
+#    return gene_dic
+
+def gene_vcf_dic_bad(species, num_threads):
+    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
+        print "Reading %s pickle" % species
+        gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
+    else:
+        gene_dic = get_species_data(species)
+        gene_vcf_dic_threads(species, num_threads, gene_dic)
+#        pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
+#    return gene_dic
+
+def gene_vcf_dic_worker(gene_object, vcf_file, flank_size):
+    print "getting genotypes"
+    vcf_reader = vcf.Reader(filename = vcf_file)
+    gene_object.get_genotypes(vcf_reader, flank_size)
+
 def gene_vcf_dic(species):
     if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
         print "Reading %s pickle" % species
@@ -133,26 +183,115 @@ def gene_vcf_dic(species):
         gene_dic = get_species_data(species)
         reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
         for gene_name, gene_object in gene_dic.items():
-            gene_object.get_genotypes(reader, 3000)
+            if gene_name == "LLEU_00225":
+                gene_object.get_genotypes(reader, 3000)
+        print "Dumping %s pickle" % species
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
     return gene_dic
-    
 
-def mk_test(inspecies, outspecies, align_dir):
-    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
+def hka_test(inspecies, outspecies, seq_type, ortho_dic):
     in_gene_dic = gene_vcf_dic(inspecies)
     out_gene_dic = gene_vcf_dic(outspecies)
-#    out_gene_dic = get_species_data(outspecies)
-#    reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (outspecies, outspecies))
-#    for gene_name, gene_object in out_gene_dic.items():
-#        gene_object.get_genotypes(reader, 3000)
+    hka_table = open("%s_%s_hka_table.txt" % (inspecies, outspecies), 'w')
+    hka_line_list = []
+    numloci = 0
+    for og_num in ortho_dic.keys():
+        if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+            continue
+        if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
+            if og_num != 2110:
+                continue
+            print og_num
+            print ortho_dic[og_num]
+            inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
+            outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
+            inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type)
+            print inpoly
+            print oupoly
+            print insample
+            print outsample
+            if len(inseq) < 200 or len(outseq) < 200:
+                continue
+            if in_gene_dic[inspecies_gene].strand == -1:
+                inseq = str(Seq.Seq(inseq).reverse_complement())
+            if out_gene_dic[outspecies_gene].strand == -1:
+                outseq = str(Seq.Seq(outseq).reverse_complement())
+            average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
+        numloci += 1
+        hka_line_list.append("%s\t%s\t%s\%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
+    hka_table.write("Dummy line\n")
+    hka_table.write("%s\n" % numloci)
+    hka_table.write("%s %s\n" % (inspecies, outspecies))
+    for line in hka_line_list:
+        hka_table.write(line)
+    hka_table.close()
+    #run this: https://bio.cst.temple.edu/~hey/program_files/HKA/HKA_Documentation.htm
 
+def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type):
+    if seq_type == "flank":
+        inpoly = in_gene_dic[inspecies_gene].flank_subs
+        outpoly = out_gene_dic[outspecies_gene].flank_subs
+        inseq = "".join(in_gene_dic[inspecies_gene].flank_dic.values())
+        outseq = "".join(out_gene_dic[outspecies_gene].flank_dic.values())
+        print inpoly
+        print outpoly
+        insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].flank_dic)
+        outsample = out_gene_dic[inspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].flank_dic)
+    elif seq_type == "intron":
+        inpoly = in_gene_dic[inspecies_gene].intron_subs
+        outpoly = out_gene_dic[outspecies_gene].intron_subs
+        inseq = "".join(in_gene_dic[inspecies_gene].intron_dic.values())
+        outseq = "".join(out_gene_dic[outspecies_gene].intro_dic.values())
+        insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].intron_dic)
+        outsample = out_gene_dic[inspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].intron_dic)
+    elif seq_type == "three_prime_utr":
+        inpoly = in_gene_dic[inspecies_gene].utr3_subs
+        outpoly = out_gene_dic[outspecies_gene].utr3_subs
+        inseq = "".join(in_gene_dic[inspecies_gene].utr3_dic.values())
+        outseq = "".join(out_gene_dic[outspecies_gene].utr3_dic.values())
+        insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].utr3_dic)
+        outsample = out_gene_dic[inspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].utr3_dic)
+    elif seq_type == "five_prime_utr":
+        inpoly = in_gene_dic[inspecies_gene].utr5_subs
+        outpoly = out_gene_dic[outspecies_gene].utr5_subs
+        inseq = "".join(in_gene_dic[inspecies_gene].utr5_dic.values())
+        outseq = "".join(out_gene_dic[outspecies_gene].utr5_dic.values())
+        insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].utr5_dic)
+        outsample = out_gene_dic[inspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].utr5_dic)
+    return inpoly, outpoly, inseq, outseq, insample, outsample
+
+def muscle_pairwise_diff_count(seq1, seq2):
+    handle = StringIO()
+    rec1 = SeqRecord(Seq.Seq(seq1), id = "inseq")
+    rec2 = SeqRecord(Seq.Seq(seq2), id = "outseq")
+    recs = [rec1, rec2]
+    SeqIO.write(recs, handle, "fasta")
+    data = handle.getvalue()
+    muscle_cline = MuscleCommandline()
+    stdout, stderr = muscle_cline(stdin = data)
+    align = AlignIO.read(StringIO(stdout), "fasta")
+    align_dic = {}
+    for rec in align:
+        align_dic[rec.id] = str(rec.seq)
+    counter = 0
+    missing_data = ["N", "-"]
+    for x in range(len(align_dic["inseq"])):
+        if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
+            continue
+        if align_dic["inseq"][x] != align_dic["outseq"][x]:
+            counter += 1
+    return counter, len(align_dic["inseq"])
+
+def mk_test(inspecies, outspecies, align_dir, num_threads):
+    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
+    in_gene_dic = gene_vcf_dic(inspecies, num_threads)
+    out_gene_dic = gene_vcf_dic(outspecies, num_threads)
     mk_table = open("%s_%s_mk_table.txt" % (inspecies, outspecies), 'w')
     mk_table.write("geneID\tPR\tFR\tPS\tFS\tTsil\tTrepl\tnout\tnpop\n")
     for og_num in ortho_dic.keys():
-        if ortho_dic[og_num].keys().count(inspecies) == 1 and ortho_dic[og_num].keys().count(outspecies) == 1:
-            if og_num != 2110:
-                continue
+        if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
+#            if og_num != 2110:
+#                continue
             reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
             for rec in reader:
                 if rec.id[0:4] == inspecies:
@@ -166,7 +305,8 @@ def mk_test(inspecies, outspecies, align_dir):
             in_poly_nsyn = in_gene_dic[inseq_name].nsyn_count
             in_potent_syn = in_gene_dic[inseq_name].potent_syn
             in_potent_nsyn = in_gene_dic[inseq_name].potent_nsyn
-            in_n_size = in_gene_dic[inseq_name].average_n
+#            in_n_size = in_gene_dic[inseq_name].average_n * 2
+            in_n_size = in_gene_dic[inseq_name].average_sample_size(in_gene_dic[inseq_name].cds) * 2
             mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(in_n_size)]) + "\n")
     mk_table.close()
 
