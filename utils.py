@@ -49,23 +49,25 @@ def ortho_reader(orthofile):
     return ortho_dic
         
 def get_species_data(target_species):
+    #This is the big method. Harvests gene coordinates from GFF3 files
+    #and creates Gene objects with all of their characteristics.
+    official_dir = "/Genomics/kocherlab/berubin/official_release"
     seq_dic = {}
-    reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_genome_v1.0.fasta" % (target_species, target_species), format = 'fasta')
+    reader = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
     for rec in reader:
         seq_dic[rec.id] = str(rec.seq)
     cds_dic = {}
-    reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (target_species, target_species), format = 'fasta')
+    reader = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
     for rec in reader:
         cds_dic[rec.id[:-3]] = str(rec.seq)
 
-#    gff_file = gffParser(open("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform_scaf_5_1M.gff3" % (target_species, target_species), 'rU'))
-    gff_file = gffParser(open("/Genomics/kocherlab/berubin/official_release/%s/%s_testset.gff3" % (target_species, target_species), 'rU'))
+#    gff_file = gffParser(open("%s/%s/%s_testset.gff3" % (official_dir, target_species, target_species), 'rU'))
+    gff_file = gffParser(open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
     gene_dic = gff_file.geneDict()
     gene_objects = {}
     for gene_name in gene_dic.keys():
         gene_objects[gene_name] = Gene(gene_name, gene_dic[gene_name][0], gene_dic[gene_name][1])
     out_dic = {}
-#    if data_type == "CDS":
     gene_objects = get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic)
     gene_objects = get_cds_dic(gff_file, gene_dic, gene_objects)
     gene_objects = get_utr_dic(gff_file, gene_dic, "three", gene_objects)
@@ -74,6 +76,7 @@ def get_species_data(target_species):
     return gene_objects
 
 def make_cds_sequences(gene_objects, cds_dic):
+    #Add sequence data to all of the Gene objects
     for gene in gene_objects.values():
         gene.get_cds_sequence(cds_dic)
         gene.get_flank_sequence(3000)
@@ -81,6 +84,7 @@ def make_cds_sequences(gene_objects, cds_dic):
         gene.get_intron_sequence()
 
 def get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic):
+    #Add coordinate data for all of the Gene objects
     for gene_name in gene_dic.keys():
         gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
         gene_objects[gene_name].set_start(gene_deets["start"])
@@ -89,6 +93,7 @@ def get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic):
     return gene_objects
 
 def get_utr_dic(gff_file, gene_dic, prime_end, gene_objects):
+    #Add UTR coordinate data to all of the Gene objects
     utr_tuples = {}
     for gene_name in gene_dic.keys():
         mrna_list = gff_file.getmRNA(gene_dic[gene_name][0], gene_name) #only one mRNA because working with longest iso
@@ -100,25 +105,11 @@ def get_utr_dic(gff_file, gene_dic, prime_end, gene_objects):
             tuple_list = []
             for utr_dic in utr_list:
                 tuple_list.append((utr_dic["start"], utr_dic["end"]))
-#            utr_tuples[mrna_dic["Name"]] = tuple_list
             gene_objects[gene_name].add_utrs(tuple_list, prime_end)
     return gene_objects
 
-def get_introns_dic(gff_file, gene_dic, gene_objects):
-    intron_dic = {}
-    cds_dic = get_cds_dic(gff_file, gene_dic)
-    for gene_name in cds_dic.keys():
-        cds_tuples = []
-        sorted_tuples = cds_dic[gene_name]
-        intron_list = []
-        for x in range(len(sorted_tuples)-1):
-            cur_intron = (sorted_tuples[x][1], sorted_tuples[x+1][0])
-            intron_list.append(cur_intron)
-        intron_dic[gene_name] = intron_list
-        print intron_list
-    return intron_dic
-
 def get_cds_dic(gff_file, gene_dic, gene_objects):
+    #Create Gene objects
     out_dic = {}
     for gene_name in gene_dic.keys():
         mrna_list = gff_file.getmRNA(gene_dic[gene_name][0], gene_name) #only one mRNA because working with longest iso
@@ -128,64 +119,26 @@ def get_cds_dic(gff_file, gene_dic, gene_objects):
             for cds in cds_dic:
                 cds_tuples.append((cds["start"], cds["end"]))
             sorted_tuples = sorted(cds_tuples, key = lambda tup: tup[0])
-#            cds_list = []
-#            out_dic[mrna_dic["Name"]] = sorted_tuples
             gene_objects[gene_name].add_cds(sorted_tuples)
     return gene_objects
 
-def gene_vcf_dic_threads(species, num_threads, gene_dic):
-    work_queue = multiprocessing.Queue()
-    result_queue = multiprocessing.Queue()
-    vcf_file = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species)
-#        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
-    for gene_name, gene_object in gene_dic.items():
-        print gene_name
-        work_queue.put([gene_object, vcf_file, 3000])
-    print str(work_queue)
-    jobs = []
-    for i in range(num_threads):
-        print "make worker"
-        worker = Worker(work_queue, result_queue, gene_vcf_dic_worker)
-        jobs.append(worker)
-        worker.start()
-    try:
-        for j in jobs:
-            j.join()
-    except KeyboardInterrupt:
-        for j in jobs:
-            j.terminate()
-            j.join()
-            
-            #gene_object.get_genotypes(reader, 3000)
-#        
-#    return gene_dic
-
-def gene_vcf_dic_bad(species, num_threads):
-    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
-        print "Reading %s pickle" % species
-        gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
-    else:
-        gene_dic = get_species_data(species)
-        gene_vcf_dic_threads(species, num_threads, gene_dic)
-#        pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
-#    return gene_dic
-
-def gene_vcf_dic_worker(gene_object, vcf_file, flank_size):
-    print "getting genotypes"
-    vcf_reader = vcf.Reader(filename = vcf_file)
-    gene_object.get_genotypes(vcf_reader, flank_size)
-
 def gene_vcf_dic(species):
+    #This launches the construction of Gene objects and pickles them.
     if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
         print "Reading %s pickle" % species
         gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
     else:
         print "Building %s pickle" % species
         gene_dic = get_species_data(species)
-        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
+#        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
+        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered.vcf.gz" % (species, species))
+        gene_count = 0
         for gene_name, gene_object in gene_dic.items():
 #            if gene_name == "LLEU_00225":
 #            if gene_name == "LMAL_05156":
+            print gene_name
+            print gene_count
+            gene_count += 1
             gene_object.get_genotypes(reader, 3000)
         print "Dumping %s pickle" % species
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
@@ -201,11 +154,13 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
         if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
             continue
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
-            if og_num != 2110:
-                continue
+#            if og_num != 2110:
+#                continue
             print og_num
             inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
             outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
+            print inspecies_gene
+            print outspecies_gene
             inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type)
             if len(inseq) < 200 or len(outseq) < 200:
                 continue
@@ -215,16 +170,19 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
                 outseq = str(Seq.Seq(outseq).reverse_complement())
             average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
         numloci += 1
-        hka_line_list.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
-    hka_table.write("Dummy line\n")
+        hka_line_list.append("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
+    hka_table.write("HKA table\n")
+    hka_table.write("#%s against %s\n" % (inspecies, outspecies))
     hka_table.write("%s\n" % numloci)
-    hka_table.write("%s %s\n" % (inspecies, outspecies))
+    hka_table.write("%s\t%s\n" % (inspecies, outspecies))
     for line in hka_line_list:
         hka_table.write(line)
     hka_table.close()
     #run this: https://bio.cst.temple.edu/~hey/program_files/HKA/HKA_Documentation.htm
 
 def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type):
+    #Gather together all of the necessary HKA test data from different
+    #types of sequence.
     if seq_type == "flank":
         inpoly = in_gene_dic[inspecies_gene].flank_subs
         outpoly = out_gene_dic[outspecies_gene].flank_subs
@@ -256,6 +214,8 @@ def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, 
     return inpoly, outpoly, inseq, outseq, insample, outsample
 
 def muscle_pairwise_diff_count(seq1, seq2):
+    #Align two sequences using muscle and return the number of 
+    #differences between them.
     handle = StringIO()
     rec1 = SeqRecord(Seq.Seq(seq1), id = "inseq")
     rec2 = SeqRecord(Seq.Seq(seq2), id = "outseq")
@@ -267,7 +227,6 @@ def muscle_pairwise_diff_count(seq1, seq2):
     align = AlignIO.read(StringIO(stdout), "fasta")
     align_dic = {}
     for rec in align:
-        print str(rec.seq)
         align_dic[rec.id] = str(rec.seq)
     counter = 0
     missing_data = ["N", "-"]
@@ -279,7 +238,6 @@ def muscle_pairwise_diff_count(seq1, seq2):
     return counter, len(align_dic["inseq"])
 
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):
-#    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
     in_gene_dic = gene_vcf_dic(inspecies)
     out_gene_dic = gene_vcf_dic(outspecies)
     mk_table = open("%s/%s_%s_mk_table.txt" % (out_path, inspecies, outspecies), 'w')
@@ -288,8 +246,8 @@ def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):
         if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
             continue
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
-            if og_num != 2110:
-                continue
+#            if og_num != 2110:
+#                continue
             reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
             for rec in reader:
                 if rec.id[0:4] == inspecies:
@@ -298,12 +256,14 @@ def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):
                 elif rec.id[0:4] == outspecies:
                     outseq = str(rec.seq)
                     outseq_name = rec.id[:-3]
+            print og_num
+            print inseq_name
+            print outseq_name
             fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
             in_poly_syn = in_gene_dic[inseq_name].syn_count
             in_poly_nsyn = in_gene_dic[inseq_name].nsyn_count
             in_potent_syn = in_gene_dic[inseq_name].potent_syn
             in_potent_nsyn = in_gene_dic[inseq_name].potent_nsyn
-#            in_n_size = in_gene_dic[inseq_name].average_n * 2
             in_n_size = in_gene_dic[inseq_name].average_sample_size(in_gene_dic[inseq_name].cds) * 2
             mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(in_n_size)]) + "\n")
     mk_table.close()
@@ -559,7 +519,6 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
     #also create an index file that lists the number of taxa in each OG
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
-#    ref_file = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'w')
     ref_file = open(indexfile, 'w')
     ref_file.write("#og\tnum_taxa\tnum_paras\n")
     counter = 0
@@ -607,7 +566,6 @@ def concatenate_for_raxml(input_dir, outfile):
 
 def read_ortho_index(index_file, min_taxa, paras_allowed):
     #get list of all of the OG's with the minumum taxa
-#    reader = open("%s/%s_ortho.index" % (options.base_dir, options.prefix), 'rU')
     reader = open(index_file, 'rU')
     og_list = []
     for line in reader:

@@ -55,16 +55,12 @@ class Gene:
         seq_dic = collections.OrderedDict()
         cur_start = self.start - flank_size
         cur_end = self.end + flank_size
-#        if self.start < 0:
-#            self.start = 0
-#        if self.end > len(scaf_seq):
-#            self.end = len(scaf_seq)
         if cur_start < 0:
             cur_start = 0
         if cur_end > len(scaf_seq):
             cur_end = len(scaf_seq)
         index = cur_start
-        while index < cur_end:
+        while index <= cur_end:
             seq_dic[index] = scaf_seq[index-1]
             index += 1
         self.sequence = seq_dic
@@ -130,11 +126,6 @@ class Gene:
         utr3_subs = 0
         utr5_subs = 0
         for index in self.alts.keys():
-#            print index
-#            print self.flank_dic
-#            print self.alts[index]
-#            print self.refs[index]
-
             if index in self.flank_dic.keys():
                 for x in range(len(self.alts[index])):
                     if x > len(self.refs[index]) - 1:
@@ -159,10 +150,6 @@ class Gene:
                         break
                     if str(self.alts[index])[x] != str(self.refs[index])[x]:
                         utr5_subs += 1
-#        print flank_subs
-#        print intron_subs
-#        print utr3_subs
-#        print utr5_subs
         self.flank_subs = flank_subs
         self.intron_subs = intron_subs
         self.utr3_subs = utr3_subs
@@ -185,9 +172,9 @@ class Gene:
                 variant_len = len(self.alts[index])
                 if self.strand == 1:
                     cds_index = self.cds.keys().index(index)
-                    print self.alts[index]
-                    print index
-                    print cds_index
+#                    print self.alts[index]
+#                    print index
+#                    print cds_index
 #                    codon_start = index - (cds_index % 3)
 #                    codon_start = cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
                     codon_start = cds_index - (cds_index % 3) #+ ((variant_len / 3) * 3)
@@ -196,10 +183,10 @@ class Gene:
                     if leftover_len % 3 > 0:
                         additional_len += 3
 #                    for x in range(3 + ((variant_len / 3) * 3) + variant_len % 3 * 3):
-                    print codon_start
-                    print leftover_len
-                    print additional_len
-                    print variant_len
+#                    print codon_start
+#                    print leftover_len
+#                    print additional_len
+#                    print variant_len
                     for x in range(3+additional_len):
                         new_index = codon_start + x
                         new_index = self.cds.keys()[new_index]
@@ -207,15 +194,15 @@ class Gene:
                         old_codon += self.cds[new_index]
 #                        new_codon.append(self.cds[codon_start + x])
                         new_codon.append(self.cds[new_index])
-                        print new_codon
-                        print old_codon
+#                        print new_codon
+#                        print old_codon
 #                    new_codon[cds_index % 3] = str(self.alts[index])
                     for x in range(variant_len):
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[x]
                     old_codon = Seq.Seq(old_codon)
                     new_codon = Seq.Seq("".join(new_codon))
-                    print old_codon
-                    print new_codon
+#                    print old_codon
+#                    print new_codon
 
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
@@ -287,13 +274,10 @@ class Gene:
 
     def get_genotypes(self, vcf_reader, flank_size):
         scaf_len = vcf_reader.contigs[self.scaf][1]
-#        right_flank_index = self.end + flank_size
-#        left_flank_index = self.start - flank_size
         called_site_count = 0
         alt_dic = {}
         called_count = {}
         ref_dic = {}
-#        for rec in vcf_reader.fetch(self.scaf, left_flank_index, right_flank_index):
         for rec in vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end):
             if rec.num_called < 4:
                 continue
