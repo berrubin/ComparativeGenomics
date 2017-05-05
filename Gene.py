@@ -32,7 +32,8 @@ class Gene:
         self.utr3_subs = -1
         self.utr5_subs =-1
         self.called_counts = {}
-
+        self.flank_start = -1
+        self.flank_end = -1
         
     def add_cds(self, cds_list):
         self.cds = cds_list
@@ -52,17 +53,23 @@ class Gene:
 
     def set_sequence(self, scaf_seq, flank_size):
         seq_dic = collections.OrderedDict()
-        if self.start < 0:
-            self.start = 0
-        if self.end > len(scaf_seq):
-            self.end = len(scaf_seq)
         cur_start = self.start - flank_size
         cur_end = self.end + flank_size
+#        if self.start < 0:
+#            self.start = 0
+#        if self.end > len(scaf_seq):
+#            self.end = len(scaf_seq)
+        if cur_start < 0:
+            cur_start = 0
+        if cur_end > len(scaf_seq):
+            cur_end = len(scaf_seq)
         index = cur_start
         while index < cur_end:
             seq_dic[index] = scaf_seq[index-1]
             index += 1
         self.sequence = seq_dic
+        self.flank_start = cur_start
+        self.flank_end = cur_end
 
     def get_introns(self):
         intron_list = []
@@ -165,6 +172,8 @@ class Gene:
     def syn_and_nsyn(self):
         syn_count = 0
         nsyn_count = 0
+#        if self.name != "LMAL_05156":
+#            return
         print self.name
         for index in self.alts.keys():
             old_codon = ""
@@ -176,55 +185,69 @@ class Gene:
                 variant_len = len(self.alts[index])
                 if self.strand == 1:
                     cds_index = self.cds.keys().index(index)
-                    codon_start = index - (cds_index % 3)
+                    print self.alts[index]
+                    print index
+                    print cds_index
+#                    codon_start = index - (cds_index % 3)
+#                    codon_start = cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
+                    codon_start = cds_index - (cds_index % 3) #+ ((variant_len / 3) * 3)
                     leftover_len = variant_len - (3 - cds_index % 3)
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
 #                    for x in range(3 + ((variant_len / 3) * 3) + variant_len % 3 * 3):
+                    print codon_start
+                    print leftover_len
+                    print additional_len
+                    print variant_len
                     for x in range(3+additional_len):
-                        old_codon += self.cds[codon_start + x]
-                        new_codon.append(self.cds[codon_start + x])
-                    new_codon[cds_index % 3] = str(self.alts[index])
+                        new_index = codon_start + x
+                        new_index = self.cds.keys()[new_index]
+#                        old_codon += self.cds[codon_start + x]
+                        old_codon += self.cds[new_index]
+#                        new_codon.append(self.cds[codon_start + x])
+                        new_codon.append(self.cds[new_index])
+                        print new_codon
+                        print old_codon
+#                    new_codon[cds_index % 3] = str(self.alts[index])
                     for x in range(variant_len):
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[x]
                     old_codon = Seq.Seq(old_codon)
                     new_codon = Seq.Seq("".join(new_codon))
+                    print old_codon
+                    print new_codon
+
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
-                    codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
+#                    codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
+                    codon_start = len(self.cds.keys()) - 1 - cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
+#                    codon_start = self.cds.keys().index(index + (cds_index % 3) + ((variant_len / 3) * 3))
                     leftover_len = variant_len - (3 - cds_index % 3)
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
 
 #                    for x in range(3 + ((variant_len / 3) * 3)):
-                    print index
-                    print self.alts[index]
-                    print codon_start
-                    print additional_len
-                    print variant_len
-                    print cds_index
                     for x in range(3 + additional_len):
                         new_index = codon_start - x
-                        if codon_start - x not in self.cds.keys():
-                            new_index = self.reverse_adjacent_site(codon_start - x, codon_start )
-                        print "new index"
-                        print new_index
-                        print x
-                        print codon_start - x
-#                        print self.cds[codon_start -x]
+                        new_index = self.cds.keys()[new_index]
+#                        if codon_start - x not in self.cds.keys():
+#                            new_index = self.reverse_adjacent_site(codon_start - x, codon_start )
 #                        old_codon += self.cds[codon_start - x]
                         old_codon += self.cds[new_index]
 #                        new_codon.append(self.cds[codon_start - x])
                         new_codon.append(self.cds[new_index])
-                    new_codon[cds_index % 3] = str(self.alts[index])
+#                        print old_codon
+#                        print new_codon
+#                    new_codon[cds_index % 3] = str(self.alts[index])
+#                    print new_codon
                     for x in range(variant_len):
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[variant_len - x - 1]
+#                    print new_codon
                     old_codon = Seq.Seq(old_codon).complement()
                     new_codon = Seq.Seq("".join(new_codon)).complement()
-                    print old_codon
-                    print new_codon
+#                    print old_codon
+#                    print new_codon
                 old_aa = str(old_codon.translate())
                 new_aa = str(new_codon.translate())
                 temp_nsyn = 0
@@ -264,13 +287,14 @@ class Gene:
 
     def get_genotypes(self, vcf_reader, flank_size):
         scaf_len = vcf_reader.contigs[self.scaf][1]
-        right_flank_index = self.end
-        left_flank_index = self.start
+#        right_flank_index = self.end + flank_size
+#        left_flank_index = self.start - flank_size
         called_site_count = 0
         alt_dic = {}
         called_count = {}
         ref_dic = {}
-        for rec in vcf_reader.fetch(self.scaf, left_flank_index, right_flank_index):
+#        for rec in vcf_reader.fetch(self.scaf, left_flank_index, right_flank_index):
+        for rec in vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end):
             if rec.num_called < 4:
                 continue
             elif rec.num_called == rec.num_hom_ref:

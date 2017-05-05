@@ -180,19 +180,21 @@ def gene_vcf_dic(species):
         print "Reading %s pickle" % species
         gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
     else:
+        print "Building %s pickle" % species
         gene_dic = get_species_data(species)
         reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
         for gene_name, gene_object in gene_dic.items():
-            if gene_name == "LLEU_00225":
-                gene_object.get_genotypes(reader, 3000)
+#            if gene_name == "LLEU_00225":
+#            if gene_name == "LMAL_05156":
+            gene_object.get_genotypes(reader, 3000)
         print "Dumping %s pickle" % species
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
     return gene_dic
 
-def hka_test(inspecies, outspecies, seq_type, ortho_dic):
+def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
     in_gene_dic = gene_vcf_dic(inspecies)
     out_gene_dic = gene_vcf_dic(outspecies)
-    hka_table = open("%s_%s_hka_table.txt" % (inspecies, outspecies), 'w')
+    hka_table = open("%s/%s_%s_hka_table.txt" % (out_path, inspecies, outspecies), 'w')
     hka_line_list = []
     numloci = 0
     for og_num in ortho_dic.keys():
@@ -202,14 +204,9 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic):
             if og_num != 2110:
                 continue
             print og_num
-            print ortho_dic[og_num]
             inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
             outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
             inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type)
-            print inpoly
-            print oupoly
-            print insample
-            print outsample
             if len(inseq) < 200 or len(outseq) < 200:
                 continue
             if in_gene_dic[inspecies_gene].strand == -1:
@@ -218,7 +215,7 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic):
                 outseq = str(Seq.Seq(outseq).reverse_complement())
             average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
         numloci += 1
-        hka_line_list.append("%s\t%s\t%s\%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
+        hka_line_list.append("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
     hka_table.write("Dummy line\n")
     hka_table.write("%s\n" % numloci)
     hka_table.write("%s %s\n" % (inspecies, outspecies))
@@ -233,10 +230,8 @@ def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, 
         outpoly = out_gene_dic[outspecies_gene].flank_subs
         inseq = "".join(in_gene_dic[inspecies_gene].flank_dic.values())
         outseq = "".join(out_gene_dic[outspecies_gene].flank_dic.values())
-        print inpoly
-        print outpoly
         insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].flank_dic)
-        outsample = out_gene_dic[inspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].flank_dic)
+        outsample = out_gene_dic[outspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].flank_dic)
     elif seq_type == "intron":
         inpoly = in_gene_dic[inspecies_gene].intron_subs
         outpoly = out_gene_dic[outspecies_gene].intron_subs
@@ -272,6 +267,7 @@ def muscle_pairwise_diff_count(seq1, seq2):
     align = AlignIO.read(StringIO(stdout), "fasta")
     align_dic = {}
     for rec in align:
+        print str(rec.seq)
         align_dic[rec.id] = str(rec.seq)
     counter = 0
     missing_data = ["N", "-"]
@@ -282,16 +278,18 @@ def muscle_pairwise_diff_count(seq1, seq2):
             counter += 1
     return counter, len(align_dic["inseq"])
 
-def mk_test(inspecies, outspecies, align_dir, num_threads):
-    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-    in_gene_dic = gene_vcf_dic(inspecies, num_threads)
-    out_gene_dic = gene_vcf_dic(outspecies, num_threads)
-    mk_table = open("%s_%s_mk_table.txt" % (inspecies, outspecies), 'w')
+def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):
+#    ortho_dic = ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
+    in_gene_dic = gene_vcf_dic(inspecies)
+    out_gene_dic = gene_vcf_dic(outspecies)
+    mk_table = open("%s/%s_%s_mk_table.txt" % (out_path, inspecies, outspecies), 'w')
     mk_table.write("geneID\tPR\tFR\tPS\tFS\tTsil\tTrepl\tnout\tnpop\n")
     for og_num in ortho_dic.keys():
+        if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+            continue
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
-#            if og_num != 2110:
-#                continue
+            if og_num != 2110:
+                continue
             reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
             for rec in reader:
                 if rec.id[0:4] == inspecies:

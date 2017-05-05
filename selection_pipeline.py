@@ -24,7 +24,8 @@ POLYMORPHIC = ["LCAL", "LALB"]
 
 def main():
     ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-    utils.hka_test("LLEU", "LLEU", "flank", ortho_dic)
+    utils.mk_test("LMAL", "LLEU", ortho_dic, "%s/%s_prank" % (options.base_dir, options.prefix), options.base_dir)
+    utils.hka_test("LMAL", "LLEU", "flank", ortho_dic, options.base_dir)
     if not os.path.isdir(options.base_dir):
         os.mkdir(options.base_dir)     #create working directory
     seq_dic = utils.get_cds() #get coding sequences from all species
@@ -65,7 +66,7 @@ def main():
 #    paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), phylogeny_file, options.num_threads)
 #    read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type))
 #    test_lrt("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type))
-#    utils.mk_test("LMAL", "LLEU", "%s/%s_prank" % (options.base_dir, options.prefix), options.num_threads)
+
 
 if __name__ == '__main__':
     main()
