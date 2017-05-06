@@ -58,11 +58,13 @@ def get_species_data(target_species):
         seq_dic[rec.id] = str(rec.seq)
     cds_dic = {}
     reader = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+
     for rec in reader:
         cds_dic[rec.id[:-3]] = str(rec.seq)
 
 #    gff_file = gffParser(open("%s/%s/%s_testset.gff3" % (official_dir, target_species, target_species), 'rU'))
     gff_file = gffParser(open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
+#    gff_file = gffParser(open("%s/%s/%s_09600.gff3" % (official_dir, target_species, target_species), 'rU'))
     gene_dic = gff_file.geneDict()
     gene_objects = {}
     for gene_name in gene_dic.keys():
@@ -130,12 +132,12 @@ def gene_vcf_dic(species):
     else:
         print "Building %s pickle" % species
         gene_dic = get_species_data(species)
-#        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (species, species))
-        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered.vcf.gz" % (species, species))
+#        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_09600.vcf.gz" % (species, species))
+        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_normal.vcf.gz" % (species, species))
         gene_count = 0
         for gene_name, gene_object in gene_dic.items():
 #            if gene_name == "LLEU_00225":
-#            if gene_name == "LMAL_05156":
+#            if gene_name == "LMAL_09600":
             print gene_name
             print gene_count
             gene_count += 1
@@ -230,12 +232,15 @@ def muscle_pairwise_diff_count(seq1, seq2):
         align_dic[rec.id] = str(rec.seq)
     counter = 0
     missing_data = ["N", "-"]
+    indel_count = 0
     for x in range(len(align_dic["inseq"])):
         if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
+            indel_count += 1
             continue
         if align_dic["inseq"][x] != align_dic["outseq"][x]:
             counter += 1
-    return counter, len(align_dic["inseq"])
+            
+    return counter, len(align_dic["inseq"]) - indel_count
 
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):
     in_gene_dic = gene_vcf_dic(inspecies)

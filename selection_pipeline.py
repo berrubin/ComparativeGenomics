@@ -6,14 +6,14 @@ from optparse import OptionParser
 
 parser = OptionParser()
 
-parser.add_option("-p", "--num_threads", dest = "num_threads", type = int, default = 1)
-parser.add_option("-m", "--min_og_group", dest = "min_og_group", type = int)
-parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int)
-parser.add_option("-o", "--prefix", dest = "prefix", type = str)
-parser.add_option("-b", "--base_dir", dest = "base_dir", type = str)
+parser.add_option("-p", "--num_threads", dest = "num_threads", type = int, default = 1, help = "Number of cores to use.")
+parser.add_option("-m", "--min_og_group", dest = "min_og_group", type = int, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers less than this number.")
+parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers more than this number.")
+parser.add_option("-o", "--prefix", dest = "prefix", type = str, help = "String used at the beginning of output directories and files.")
+parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Output directory.")
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int)
-parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree")
+parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho", help = "File of orthologous groups.")
+parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree", help = "Phylogeny of species examined.")
 (options, args) = parser.parse_args()
 
 STOP_CODONS = ["TAA", "TAG", "TGA"]

@@ -270,6 +270,8 @@ class Gene:
             if site in target_dic.keys():
                 num_sites += 1
                 size_sum += size
+        if num_sites == 0:
+            return 0
         return size_sum / num_sites
 
     def get_genotypes(self, vcf_reader, flank_size):
@@ -298,7 +300,7 @@ class Gene:
                 ref_dic[rec.POS] = rec.REF
                 called_count[rec.POS] = rec.num_called
         self.called_counts = called_count
-        self.average_n = sum(called_count.values()) / len(called_count.values())
+#        self.average_n = sum(called_count.values()) / len(called_count.values())
         self.alts = alt_dic
         self.refs = ref_dic
         self.syn_and_nsyn()
