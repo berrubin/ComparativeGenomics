@@ -172,6 +172,11 @@ class Gene:
                 variant_len = len(self.alts[index])
                 if self.strand == 1:
                     cds_index = self.cds.keys().index(index)
+
+                    if cds_index + variant_len >= len(self.cds):
+                        variant_len = len(self.cds) - cds_index - 1 #not sure about - 1
+                        self.alts[index] = str(self.alts[index])[0:variant_len]
+
 #                    print self.alts[index]
 #                    print index
 #                    print cds_index
@@ -206,17 +211,33 @@ class Gene:
 
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
+#                    print cds_index
+                    if cds_index - variant_len < 0:
+                        variant_len = cds_index
+                        self.alts[index] = str(self.alts[index])[0:variant_len]
 #                    codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
                     codon_start = len(self.cds.keys()) - 1 - cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
+#                    print codon_start
 #                    codon_start = self.cds.keys().index(index + (cds_index % 3) + ((variant_len / 3) * 3))
+
                     leftover_len = variant_len - (3 - cds_index % 3)
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
 
 #                    for x in range(3 + ((variant_len / 3) * 3)):
+#                    print leftover_len
+#                    print additional_len
+#                    print variant_len
+#                    while codon_start + additional_len >= len(self.cds):
+#                        additional_len -= 1
+#                        variant_len -= 1
+#                    if codon_start + additional_len > len(self.cds):
+                        
                     for x in range(3 + additional_len):
                         new_index = codon_start - x
+                            
+#                        print new_index
                         new_index = self.cds.keys()[new_index]
 #                        if codon_start - x not in self.cds.keys():
 #                            new_index = self.reverse_adjacent_site(codon_start - x, codon_start )

@@ -133,7 +133,7 @@ def gene_vcf_dic(species):
         print "Building %s pickle" % species
         gene_dic = get_species_data(species)
 #        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_09600.vcf.gz" % (species, species))
-        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_normal.vcf.gz" % (species, species))
+        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (species, species))
         gene_count = 0
         for gene_name, gene_object in gene_dic.items():
 #            if gene_name == "LLEU_00225":
