@@ -51,6 +51,7 @@ def ortho_reader(orthofile):
 def get_species_data(target_species):
     #This is the big method. Harvests gene coordinates from GFF3 files
     #and creates Gene objects with all of their characteristics.
+    print "getting data"
     official_dir = "/Genomics/kocherlab/berubin/official_release"
     seq_dic = {}
     reader = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
@@ -64,7 +65,9 @@ def get_species_data(target_species):
 
 #    gff_file = gffParser(open("%s/%s/%s_testset.gff3" % (official_dir, target_species, target_species), 'rU'))
     gff_file = gffParser(open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
+    print "read gff"
 #    gff_file = gffParser(open("%s/%s/%s_09600.gff3" % (official_dir, target_species, target_species), 'rU'))
+    print "done reading"
     gene_dic = gff_file.geneDict()
     gene_objects = {}
     for gene_name in gene_dic.keys():
@@ -132,6 +135,7 @@ def gene_vcf_dic(species):
     else:
         print "Building %s pickle" % species
         gene_dic = get_species_data(species)
+        print "make reader"
 #        reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_09600.vcf.gz" % (species, species))
         reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (species, species))
         gene_count = 0
@@ -239,7 +243,6 @@ def muscle_pairwise_diff_count(seq1, seq2):
             continue
         if align_dic["inseq"][x] != align_dic["outseq"][x]:
             counter += 1
-            
     return counter, len(align_dic["inseq"]) - indel_count
 
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path):

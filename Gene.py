@@ -301,7 +301,19 @@ class Gene:
         alt_dic = {}
         called_count = {}
         ref_dic = {}
-        for rec in vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end):
+        try:
+            reader = vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end)
+#            reader = vcf_reader.fetch("LMAL_scaf_1047", self.flank_start - 1, self.flank_end)
+            print "made reader"
+        except ValueError:
+            print "can't get that bit of vcf"
+            self.alts = {}
+            self.refs = {}
+            self.called_counts = {}
+            self.potential_sites()
+            return
+            
+        for rec in reader: #vcf_reader.fetch(self.scaf, self.flank_start - 1, self.flank_end):
             if rec.num_called < 4:
                 continue
             elif rec.num_called == rec.num_hom_ref:
@@ -337,7 +349,15 @@ class Gene:
         syn_sites = 0
         nsyn_sites = 0
         while x < len(cur_cds):
-            codon = cur_cds[x:x+3]
+            ambig_codon = False
+            codon = cur_cds[x:x+3].upper()
+            for ambig in ["N", "M", "R", "W", "S", "Y", "K", "V", "H", "D", "B"]:
+                if ambig in codon:
+                    ambig_codon = True
+            if ambig_codon:
+                x = x + 3
+                ambig_codon = False
+                continue
             nsyn_sites += potent_dic["N"][codon]
             syn_sites += potent_dic["S"][codon]
             x = x + 3
