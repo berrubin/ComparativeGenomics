@@ -34,6 +34,7 @@ class Gene:
         self.called_counts = {}
         self.flank_start = -1
         self.flank_end = -1
+        self.average_n = 0
         
     def add_cds(self, cds_list):
         self.cds = cds_list
@@ -285,12 +286,17 @@ class Gene:
         return new_site
 
     def average_sample_size(self, target_dic):
+        return self.average_n
         size_sum = 0
         num_sites = 0
-        for site, size in self.called_counts.items():
-            if site in target_dic.keys():
-                num_sites += 1
-                size_sum += size
+        for site in target_dic.keys():
+            num_sites += 1
+            size_sum += self.called_counts[site]
+        #trying to make it faster
+#        for site, size in self.called_counts.items():
+#            if site in target_dic.keys():
+#                num_sites += 1
+#                size_sum += size
         if num_sites == 0:
             return 0
         return size_sum / num_sites
@@ -332,13 +338,17 @@ class Gene:
                 alt_dic[rec.POS] = rec.ALT[0]
                 ref_dic[rec.POS] = rec.REF
                 called_count[rec.POS] = rec.num_called
-        self.called_counts = called_count
-#        self.average_n = sum(called_count.values()) / len(called_count.values())
+        #lower memory use? faster?
+#        self.called_counts = called_count
+        self.average_n = sum(called_count.values()) / len(called_count.values())
         self.alts = alt_dic
         self.refs = ref_dic
         self.syn_and_nsyn()
         self.potential_sites()
         self.noncoding_subs()
+        #reduce memory usage?
+        self.refs = {}
+        self.alts = {}
 
     def potential_sites(self):
         potent_dic = changes.potent_dic()

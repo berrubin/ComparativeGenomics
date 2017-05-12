@@ -153,11 +153,13 @@ def gene_vcf_dic(species):
 def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
     in_gene_dic = gene_vcf_dic(inspecies)
     out_gene_dic = gene_vcf_dic(outspecies)
-    hka_table = open("%s/%s_%s_hka_table.txt" % (out_path, inspecies, outspecies), 'w')
+    hka_table = open("%s/%s_%s_%s_hka_table.txt" % (out_path, inspecies, outspecies, seq_type), 'w')
     hka_line_list = []
     numloci = 0
     for og_num in ortho_dic.keys():
         if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+            continue
+        if ortho_dic[og_num][inspecies][0].count(inspecies) > 1 or ortho_dic[og_num][outspecies][0].count(outspecies) > 1:
             continue
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
 #            if og_num != 2110:
@@ -168,13 +170,16 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
             print inspecies_gene
             print outspecies_gene
             inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type)
+            print "data gathered"
             if len(inseq) < 200 or len(outseq) < 200:
                 continue
             if in_gene_dic[inspecies_gene].strand == -1:
                 inseq = str(Seq.Seq(inseq).reverse_complement())
             if out_gene_dic[outspecies_gene].strand == -1:
                 outseq = str(Seq.Seq(outseq).reverse_complement())
+            print "start aligning"
             average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
+            print "done aligning"
         numloci += 1
         hka_line_list.append("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
     hka_table.write("HKA table\n")
@@ -183,6 +188,7 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
     hka_table.write("%s\t%s\n" % (inspecies, outspecies))
     for line in hka_line_list:
         hka_table.write(line)
+        hka_table.flush()
     hka_table.close()
     #run this: https://bio.cst.temple.edu/~hey/program_files/HKA/HKA_Documentation.htm
 
@@ -222,6 +228,8 @@ def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, 
 def muscle_pairwise_diff_count(seq1, seq2):
     #Align two sequences using muscle and return the number of 
     #differences between them.
+    seq1 = seq1[0:len(seq2)]
+    seq2 = seq2[0:len(seq1)]
     handle = StringIO()
     rec1 = SeqRecord(Seq.Seq(seq1), id = "inseq")
     rec2 = SeqRecord(Seq.Seq(seq2), id = "outseq")
