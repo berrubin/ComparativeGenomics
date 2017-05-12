@@ -23,6 +23,7 @@ import statsmodels.stats.multitest as smm
 from Bio.SeqRecord import SeqRecord
 from Bio import AlignIO
 from StringIO import StringIO
+import datetime
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
@@ -68,15 +69,26 @@ def get_species_data(target_species):
     print "read gff"
 #    gff_file = gffParser(open("%s/%s/%s_09600.gff3" % (official_dir, target_species, target_species), 'rU'))
     print "done reading"
+    print str(datetime.datetime.now())
     gene_dic = gff_file.geneDict()
     gene_objects = {}
     for gene_name in gene_dic.keys():
         gene_objects[gene_name] = Gene(gene_name, gene_dic[gene_name][0], gene_dic[gene_name][1])
     out_dic = {}
+    print "get coords"
+    print str(datetime.datetime.now())
     gene_objects = get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic)
+    print "get cds dic"
+    print str(datetime.datetime.now())
     gene_objects = get_cds_dic(gff_file, gene_dic, gene_objects)
+    print "get 3prime"
+    print str(datetime.datetime.now())
     gene_objects = get_utr_dic(gff_file, gene_dic, "three", gene_objects)
+    print "get 5prime"
+    print str(datetime.datetime.now())
     gene_objects = get_utr_dic(gff_file, gene_dic, "five", gene_objects)
+    print "get cds sequences"
+    print str(datetime.datetime.now())
     make_cds_sequences(gene_objects, cds_dic)
     return gene_objects
 
@@ -156,6 +168,7 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
     hka_table = open("%s/%s_%s_%s_hka_table.txt" % (out_path, inspecies, outspecies, seq_type), 'w')
     hka_line_list = []
     numloci = 0
+    test_table = open("%s/%s_%s_%s_hka_table_test.txt" % (out_path, inspecies, outspecies, seq_type), 'w')
     for og_num in ortho_dic.keys():
         if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
             continue
@@ -169,8 +182,10 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
             outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
             print inspecies_gene
             print outspecies_gene
+            print str(datetime.datetime.now())
             inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, seq_type)
             print "data gathered"
+            print str(datetime.datetime.now())
             if len(inseq) < 200 or len(outseq) < 200:
                 continue
             if in_gene_dic[inspecies_gene].strand == -1:
@@ -178,10 +193,14 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
             if out_gene_dic[outspecies_gene].strand == -1:
                 outseq = str(Seq.Seq(outseq).reverse_complement())
             print "start aligning"
+            print str(datetime.datetime.now())
             average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
             print "done aligning"
+            print str(datetime.datetime.now())
+            print str(datetime.datetime.now())
         numloci += 1
         hka_line_list.append("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
+        test_table.write("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
     hka_table.write("HKA table\n")
     hka_table.write("#%s against %s\n" % (inspecies, outspecies))
     hka_table.write("%s\n" % numloci)
@@ -198,8 +217,11 @@ def gather_hka_data(in_gene_dic, out_gene_dic, inspecies_gene, outspecies_gene, 
     if seq_type == "flank":
         inpoly = in_gene_dic[inspecies_gene].flank_subs
         outpoly = out_gene_dic[outspecies_gene].flank_subs
-        inseq = "".join(in_gene_dic[inspecies_gene].flank_dic.values())
-        outseq = "".join(out_gene_dic[outspecies_gene].flank_dic.values())
+        #again, trying to make it faster and less memory
+#        inseq = "".join(in_gene_dic[inspecies_gene].flank_dic.values())
+#        outseq = "".join(out_gene_dic[outspecies_gene].flank_dic.values())
+        inseq = in_gene_dic[inspecies_gene].flank_seq
+        outseq = out_gene_dic[outspecies_gene].flank_seq
         insample = in_gene_dic[inspecies_gene].average_sample_size(in_gene_dic[inspecies_gene].flank_dic)
         outsample = out_gene_dic[outspecies_gene].average_sample_size(out_gene_dic[outspecies_gene].flank_dic)
     elif seq_type == "intron":

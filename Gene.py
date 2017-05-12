@@ -35,6 +35,8 @@ class Gene:
         self.flank_start = -1
         self.flank_end = -1
         self.average_n = 0
+        self.flank_seq = ""
+        self.intron_seq = ""
         
     def add_cds(self, cds_list):
         self.cds = cds_list
@@ -82,6 +84,7 @@ class Gene:
                 if site >= intron[0] and site <= intron[1]:
                     intron_dic[site] = nuc
         self.intron_dic = intron_dic
+        self.intron_seq = "".join(intron_dic.values())
 
     def get_utr_sequence(self):
         utr_dic = collections.OrderedDict()
@@ -107,6 +110,7 @@ class Gene:
                 if site > self.end:
                     flank_dic[site] = nuc
         self.flank_dic = flank_dic
+        self.flank_seq = "".join(flank_dic.values())
     
     def get_cds_sequence(self, seq_dic):
         cds_dic = collections.OrderedDict()
@@ -276,14 +280,14 @@ class Gene:
         self.syn_count = syn_count
         self.nsyn_count = nsyn_count
     
-    def reverse_adjacent_site(self, missing_site):
-        new_site = -1
-        for site in self.cds.keys():
-            if site > missing_site:
-                continue
-            if site < missing_site:
-                new_site = site
-        return new_site
+#    def reverse_adjacent_site(self, missing_site):
+#        new_site = -1
+#        for site in self.cds.keys():
+#            if site > missing_site:
+#                continue
+#            if site < missing_site:
+#                new_site = site
+#        return new_site
 
     def average_sample_size(self, target_dic):
         return self.average_n
@@ -349,6 +353,9 @@ class Gene:
         #reduce memory usage?
         self.refs = {}
         self.alts = {}
+        self.cds = {}
+        self.flank_dic = {}
+        self.intron_dic = {}
 
     def potential_sites(self):
         potent_dic = changes.potent_dic()
