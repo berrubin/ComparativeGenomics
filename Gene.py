@@ -344,7 +344,10 @@ class Gene:
                 called_count[rec.POS] = rec.num_called
         #lower memory use? faster?
 #        self.called_counts = called_count
-        self.average_n = sum(called_count.values()) / len(called_count.values())
+        if len(called_count.values()) == 0:
+            self.average_n = 0
+        else:
+            self.average_n = sum(called_count.values()) / len(called_count.values())
         self.alts = alt_dic
         self.refs = ref_dic
         self.syn_and_nsyn()
@@ -356,6 +359,7 @@ class Gene:
         self.cds = {}
         self.flank_dic = {}
         self.intron_dic = {}
+        self.sequence = {}
 
     def potential_sites(self):
         potent_dic = changes.potent_dic()

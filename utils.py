@@ -162,6 +162,8 @@ def gene_vcf_dic(species):
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
     return gene_dic
 
+#def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
+
 def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
     in_gene_dic = gene_vcf_dic(inspecies)
     out_gene_dic = gene_vcf_dic(outspecies)
@@ -196,7 +198,6 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path):
             print str(datetime.datetime.now())
             average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq)
             print "done aligning"
-            print str(datetime.datetime.now())
             print str(datetime.datetime.now())
         numloci += 1
         hka_line_list.append("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff))
