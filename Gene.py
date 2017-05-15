@@ -112,18 +112,19 @@ class Gene:
         self.flank_dic = flank_dic
         self.flank_seq = "".join(flank_dic.values())
     
-    def get_cds_sequence(self, seq_dic):
+    def get_cds_sequence(self):#, seq_dic):
         cds_dic = collections.OrderedDict()
         for site, nuc in self.sequence.items():
             for exon in self.cds:
                 if site >= exon[0] and site <= exon[1]:
                     cds_dic[site] = nuc
-        recon_seq = "".join(cds_dic.values())
-        if self.strand == -1:
-            recon_seq = str(Seq.Seq(recon_seq).reverse_complement())
-        if recon_seq != seq_dic[self.name]:
-            raise ImportError("Failed to reconstruct CDS for %s" % self.name)
+#        recon_seq = "".join(cds_dic.values())
+#        if self.strand == -1:
+#            recon_seq = str(Seq.Seq(recon_seq).reverse_complement())
+#        if recon_seq != seq_dic[self.name]:
+#            raise ImportError("Failed to reconstruct CDS for %s" % self.name)
         self.cds = cds_dic
+        cds_dic = {}
 
     def noncoding_subs(self):
         flank_subs = 0
@@ -166,7 +167,7 @@ class Gene:
         nsyn_count = 0
 #        if self.name != "LMAL_05156":
 #            return
-        print self.name
+#        print self.name
         for index in self.alts.keys():
             old_codon = ""
             new_codon = []
@@ -314,7 +315,7 @@ class Gene:
         try:
             reader = vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end)
 #            reader = vcf_reader.fetch("LMAL_scaf_1047", self.flank_start - 1, self.flank_end)
-            print "made reader"
+#            print "made reader"
         except ValueError:
             print "can't get that bit of vcf"
             self.alts = {}
@@ -347,7 +348,7 @@ class Gene:
         if len(called_count.values()) == 0:
             self.average_n = 0
         else:
-            self.average_n = sum(called_count.values()) / len(called_count.values())
+            self.average_n = sum(called_count.values()) / len(self.sequence)
         self.alts = alt_dic
         self.refs = ref_dic
         self.syn_and_nsyn()
