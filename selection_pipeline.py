@@ -24,11 +24,12 @@ ANC_SOLITARY = ["Nmel", "Dnov"]
 POLYMORPHIC = ["LCAL", "LALB"]
 
 def main():
+    if not os.path.isdir(options.base_dir):
+        os.mkdir(options.base_dir)     #create working directory
     ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
 #    utils.mk_test("LMAL", "LLEU", ortho_dic, "%s/%s_prank" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
     utils.hka_test("LPAU", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads)
-    if not os.path.isdir(options.base_dir):
-        os.mkdir(options.base_dir)     #create working directory
+#    utils.hka_test("LMAL", "LLEU", "flank", ortho_dic, options.base_dir, options.num_threads)
     seq_dic = utils.get_cds() #get coding sequences from all species
     #store name of orthology index file
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
@@ -51,15 +52,15 @@ def main():
 #    og_list = utils.limit_list(og_list, options.min_og_group, options.max_og_group)
     use_backbone = True #use phylogeny to align these genes
     #align non-paralogous genes
-    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
+#    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
     paras_allowed = True #allow paralogs
     #get list of all OG's including those with paralogs
-    og_list_with_paras = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+#    og_list_with_paras = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
     #this should be just the OG's with paralogs in them
     para_list = list(set(og_list_with_paras) - set(og_list))
     use_backbone = False # turn backbone phylogeny off
     #align all OG's with paralogs -- can't use backbone phylogeny for this
-    utils.prank_align(para_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
+#    utils.prank_align(para_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
     foreground = "social"
     test_type = "model_d"
     test_type = "bs"

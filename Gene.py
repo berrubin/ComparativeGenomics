@@ -133,6 +133,8 @@ class Gene:
         utr5_subs = 0
         for index in self.alts.keys():
             if index in self.flank_dic.keys():
+                if len(self.alts[index]) != len(self.refs[index]):
+                    break
                 for x in range(len(self.alts[index])):
                     if x > len(self.refs[index]) - 1:
                         break
