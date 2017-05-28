@@ -1,4 +1,8 @@
+import os
+import sys
+import changes
 from Bio.Align.Applications import MuscleCommandline
+from Bio.Align.Applications import MafftCommandline
 import multiprocessing
 from multiprocessing import Pool
 from potpour import Worker
@@ -48,8 +52,27 @@ def ortho_reader(orthofile):
         ortho_dic[counter] = gene_dic
         counter += 1
     return ortho_dic
-        
+
+def get_og_num(query_gene, ortho_dic):
+    species = query_gene[0:4]
+    query_gene = query_gene + "-RA"
+    for og_num, species_dic in ortho_dic.items():
+        if species in species_dic.keys():
+            if query_gene in species_dic[species]:
+                
+                return og_num
+    return False
+
+def make_og_gene_map(ortho_dic):
+    og_map = {}
+    for og_num, species_dic in ortho_dic.items():
+        for species, genes in species_dic.items():
+            for gene in genes:
+                og_map[gene[0:-3]] = og_num
+    return og_map
+
 def read_species_pickle(target_species):
+#    pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species), 'rb')
     pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'rb')
     gene_objects = pickle.load(pickle_file)
     pickle_file.close()
@@ -58,6 +81,7 @@ def read_species_pickle(target_species):
 def get_species_data(target_species, num_threads):
     #This is the big method. Harvests gene coordinates from GFF3 files
     #and creates Gene objects with all of their characteristics.
+#    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species)):
     if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species)):
         print "%s pickle exists" % target_species
         return
@@ -70,17 +94,26 @@ def get_species_data(target_species, num_threads):
     print "Building %s pickle" % target_species
     official_dir = "/Genomics/kocherlab/berubin/official_release"
     seq_dic = {}
-    reader = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+    if target_species == "LALB":
+        reader = SeqIO.parse("%s/%s/%s_v3/%s/%s_genome_v3.0.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+    else:
+        reader = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
     for rec in reader:
         seq_dic[rec.id] = str(rec.seq)
     cds_dic = {}
-    reader = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+    if target_species == "LALB":
+        reader = SeqIO.parse("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+    else:
+        reader = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
 
     for rec in reader:
         cds_dic[rec.id[:-3]] = str(rec.seq)
 
 #    gff_file = gffParser(open("%s/%s/%s_testset.gff3" % (official_dir, target_species, target_species), 'rU'))
-    gff_file = gffParser(open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
+    if target_species == "LALB":
+        gff_file = gffParser(open("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species, target_species, target_species), 'rU'))
+    else:
+        gff_file = gffParser(open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
     print "read gff"
 #    gff_file = gffParser(open("%s/%s/%s_09600.gff3" % (official_dir, target_species, target_species), 'rU'))
     print "get gene data"
@@ -97,29 +130,58 @@ def get_species_data(target_species, num_threads):
     seq_list = []
     species_list = []
     for gene_name in gene_dic.keys():
+#        if gene_name == "LALB_04709": #""LMAL_00737" or gene_name == "LLEU_03402":
         work_list.append([gene_name, gene_dic, gff_file, seq_dic, target_species])
     gene_list = pool.map(harvest_worker, work_list)
+    pool.close()
+    pool.join()
+#    pool.terminate()
+    neighbor_work = []
+#    pool = multiprocessing.Pool(processes = num_threads)
+    for gene in gene_list:
+#        neighbor_work.append([gene, gene_list])
+        gene.set_neighbors(gene_list)
+    print "now make neighborhoods"
+ #   pool.map(make_neighborhoods, neighbor_work)
     print "gene data gotten"
     print str(datetime.datetime.now())
-    pool.close()
+#    pool.close()
+#    pool.join()
     pool.terminate()
 #    print gene_list
     print len(gene_list)
     for gene in gene_list:
         gene_objects[gene.name] = gene
     print "Dumping %s pickle" % target_species
+#    pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species), 'wb')
     pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'wb')
     pickle.dump(gene_objects, pickle_file)
     pickle_file.close()
     gene_objects = {}
 
+def make_neighborhoods(attribute_list):
+
+    gene = attribute_list[0]
+    print "neighbors" + "\t" + gene.name
+    gene_list = attribute_list[1]
+    gene.set_neighbors(gene_list)
+#    print gene.neighbors
+
 def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, target_species):
     gene_name = attribute_list[0]
+    print gene_name
+#    if gene_name not in ["LALB_00502"]:
+#        return
     gene_dic = attribute_list[1]
     gff_file = attribute_list[2]
     seq_dic = attribute_list[3]
     target_species = attribute_list[4]
-    vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (target_species, target_species))
+    if target_species == "LALB":
+#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_social_renamed.vcf.gz" % (target_species, target_species))
+        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_solitary_renamed.vcf.gz" % (target_species, target_species))
+    else:
+        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (target_species, target_species))
+#    vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (target_species, target_species))
     cur_gene = Gene(gene_name, gene_dic[gene_name][0], gene_dic[gene_name][1])
     gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
     cur_gene.set_start(gene_deets["start"])
@@ -148,6 +210,7 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     cur_gene.get_flank_sequence(3000)
     cur_gene.get_utr_sequence()
     cur_gene.get_intron_sequence()
+#    if cur_gene.name == "LMAL_00737":
     cur_gene.get_genotypes(vcf_reader, 3000)
  #   print cur_gene.name
     return cur_gene
@@ -202,8 +265,10 @@ def get_cds_dic(gff_file, gene_dic, gene_objects):
 
 def gene_vcf_dic(species, num_threads):
     #This launches the construction of Gene objects and pickles them.
+#    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (species, species)):
     if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species)):
         print "Reading %s pickle" % species
+#        gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (species, species), 'rb'))
         gene_dic = pickle.load(open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'rb'))
     else:
         print "Building %s pickle" % species
@@ -214,18 +279,27 @@ def gene_vcf_dic(species, num_threads):
         reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (species, species))
         gene_count = 0
         for gene_name, gene_object in gene_dic.items():
-#            if gene_name == "LLEU_00225":
-#            if gene_name == "LMAL_09600":
-            print gene_name
-            print gene_count
+#            if gene_name == "LMAL_00737" or gene_name == "LLEU_03402":
+            
+#                print gene_name
+#                print gene_count
             gene_count += 1
             gene_object.get_genotypes(reader, 3000)
         print "Dumping %s pickle" % species
+#        pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (species, species), 'wb'))
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
     return gene_dic    
 
-def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads):
+def check_og_complete(og_num, inspecies, outspecies, ortho_dic):
+    if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+        return False
+    if ortho_dic[og_num][inspecies][0].count(inspecies) > 1 or ortho_dic[og_num][outspecies][0].count(outspecies) > 1:
+        return False
+    return True
+
+def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads, align_dir):
     get_species_data(inspecies, num_threads)
+    sys.exit()
     get_species_data(outspecies, num_threads)
 #    in_gene_dic = gene_vcf_dic(inspecies, num_threads)
 #    out_gene_dic = gene_vcf_dic(outspecies, num_threads)
@@ -245,36 +319,98 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads):
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
             og_list.append(og_num)
 #    og_list = [2110]
-    pool = multiprocessing.Pool(processes = num_threads)
+#    og_list = [0]
+#    og_list = og_list[0:50]
+#    pool = multiprocessing.Pool(processes = num_threads)
     work_list = []
+    fourf_work = []
     in_gene_dic = read_species_pickle(inspecies)
+    print "%s pickle read" % inspecies
     out_gene_dic = read_species_pickle(outspecies)
+    print "%s pickle read" % outspecies
+    og_map_dic = make_og_gene_map(ortho_dic)
     for og in og_list:
+        print og
         inspecies_gene = ortho_dic[og][inspecies][0][:-3]
         outspecies_gene = ortho_dic[og][outspecies][0][:-3]
+#        print inspecies_gene
         in_gene = in_gene_dic[inspecies_gene]
         out_gene = out_gene_dic[outspecies_gene]
+        neighbor_dic = {}
+#        print in_gene.neighbors
+        for neighbor_name in in_gene.neighbors:
+            try:
+                neighbor_og = og_map_dic[neighbor_name]
+            except KeyError:
+                print "%s not in orthology dictionary" % neighbor_name
+                continue
+#            if neighbor_name not in og_map_dic.keys():
+#                continue
+
+#            neighbor_og = get_og_num(neighbor_name, ortho_dic)
+#            print neighbor_og
+            if not neighbor_og:
+                continue
+            if check_og_complete(neighbor_og, inspecies, outspecies, ortho_dic):
+                outneighbor_name = ortho_dic[neighbor_og][outspecies][0][:-3]
+                neighbor_dic[neighbor_og] = (in_gene_dic[neighbor_name], out_gene_dic[outneighbor_name])
+#                print outneighbor_name
+        if len(neighbor_dic) < 5:
+            continue
         og_map.write("OG_%s\t%s\t%s\n" % (og, inspecies_gene, outspecies_gene))
-        work_list.append([inspecies, outspecies, seq_type, og, in_gene, out_gene])
+#        hka_line_list.append(hka_worker([inspecies, outspecies, seq_type, og, in_gene, out_gene, out_path, align_dir, neighbor_dic]))
+
+        work_list.append([inspecies, outspecies, seq_type, og, in_gene, out_gene, out_path, align_dir, neighbor_dic])
+#        fourf_work.append([in_gene, out_gene, align_dir, og, inspecies, outspecies])
     og_map.close()
+#    fourf_list = pool.map(fourfold_degenerate_string, fourf_work)
+#    fourf_genome_line = sum_fourf_list(fourf_list)
+#    print fourf_genome_line
+#    for line in work_list:
+#        line.append(fourf_genome_line)
+    pool = multiprocessing.Pool(processes = num_threads)
     hka_lines = pool.map(hka_worker, work_list)
     pool.close()
-    pool.terminate()
+    pool.join()
+#    pool.terminate()
     full_length_lines = []
+    jody_lines = []
+    hkadirect_lines = []
+    direct_pairwise_lines = []
     for line in hka_lines:
-        if "too_short" not in line and "too_different" not in line:
-            if int(line.split()[1]) > 5:
-                full_length_lines.append(line)
-    hka_table.write("nloci %s\n" % (len(full_length_lines)))
+#        print line
+#    for line in hka_lines_list:
+        if "too_short" not in line and "too_different" not in line and "HKA_failed" not in line[0] and "insufficient_sampling" not in line and "no_alignment" not in line:
+            jody_lines.append(line[0])
+    jody_correction(jody_lines, "%s/hka_tests/%s_%s_%s_hka_results_correct.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_results_correct_faster.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_results_correct_slower.txt" % (out_path, inspecies, outspecies, seq_type))
+    for line in hka_lines:
+        if "too_short" not in line and "too_different" not in line and "insufficient_sampling" not in line and "no_alignment" not in line:
+            if len(line[1]) > 0:
+                direct_pairwise_lines.append(line[2])
+    pairwise_direct_correction(direct_pairwise_lines, "%s/hka_tests/%s_%s_%s_hka_direct_pairwise_results_correct.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_pairwise_results_correct_faster.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_pairwiseresults_correct_slower.txt" % (out_path, inspecies, outspecies, seq_type))
+
+    for line in hka_lines:
+        if "too_short" not in line and "too_different" not in line and "insufficient_sampling" not in line and "no_alignment" not in line:
+#            if int(line[0].split()[1]) > 5:
+            if len(line[1]) > 0:
+                hkadirect_lines.append(line[1])
+
+#this is all for running HKAdirect
+    hka_table.write("nloci %s\n" % (len(hkadirect_lines)))
     hka_table.write("IDlocus\tnsam\tSegSites\tDivergence\tlength_pol\tlength_div\tfactor_chrn\n")
-    for line in full_length_lines:
+    print len(hkadirect_lines)
+    for line in hkadirect_lines:
+#        print line
         hka_table.write(line)
     hka_table.close()
     cmd = ["/Genomics/kocherlab/berubin/local/src/HKAdirect/bin/HKAdirect", "%s/hka_tests/%s_%s_%s_hka_direct.txt" % (out_path, inspecies, outspecies, seq_type)]
     with open("%s/hka_tests/%s_%s_%s_hka_direct_results.txt" % (out_path, inspecies, outspecies, seq_type), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile)
     outfile.close()
-    hka_correction("%s/hka_tests/%s_%s_%s_hka_direct_results.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_faster.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_slower.txt" % (out_path, inspecies, outspecies, seq_type))
+    hka_direct_correction("%s/hka_tests/%s_%s_%s_hka_direct_results.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_faster.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_slower.txt" % (out_path, inspecies, outspecies, seq_type))
+    in_gene_dic = {}
+    out_gene_dic = {}
+    """
     #now do it again with the roles reversed
     intemp = outspecies
     outspecies = inspecies
@@ -307,14 +443,16 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads):
         subprocess.call(cmd, stdout = outfile)
     outfile.close()
     hka_correction("%s/hka_tests/%s_%s_%s_hka_direct_results.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_faster.txt" % (out_path, inspecies, outspecies, seq_type), "%s/hka_tests/%s_%s_%s_hka_direct_results_correct_slower.txt" % (out_path, inspecies, outspecies, seq_type))
+    """
 
-
-def hka_correction(infile, outfile, fasterfile, slowerfile):
-    print infile
+def hka_direct_correction(infile, outfile, fasterfile, slowerfile):
+#    print infile
     reader = open(infile, 'rU')
     start_reading = False
     chi_list = []
     p_list = []
+    slower_p_list = []
+    faster_p_list = []
     for line in reader:
         if line.startswith("#IDloc"):
             start_reading = True
@@ -324,12 +462,13 @@ def hka_correction(infile, outfile, fasterfile, slowerfile):
         cur_line = line.split()
         if len(cur_line) == 0:
             break
-        print cur_line
+#        print "chisqprob"
+#        print cur_line[-1]
         p = chisqprob(float(cur_line[-1]), 1)
         cur_line.append(p)
         chi_list.append(cur_line)
         p_list.append(p)
-    print p_list
+#    print p_list
     pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_i')[1]
     for x in range(len(pval_corr)):
         chi_list[x].append(pval_corr[x])
@@ -344,6 +483,7 @@ def hka_correction(infile, outfile, fasterfile, slowerfile):
     slower = open(slowerfile, 'w')
     slower.write("IDloci\tnsam\tobs_S\tobs_div\tlength_pol\tlength_div\tfactor_chrn\texpHKA_S\texpVar_S\texpHKA_div\texpVar_D\texpHKA_theta\tpartialHKA\tp_val\tbh5_p\n")
     for locus in chi_list:
+#        print locus
         if float(locus[-1]) < 0.01:
             obs_s = float(locus[2])
             exp_s = float(locus[7])
@@ -354,6 +494,75 @@ def hka_correction(infile, outfile, fasterfile, slowerfile):
     faster.close()
     slower.close()
 
+def pairwise_direct_correction(line_list, outfile, fasterfile, slowerfile):
+    chi_list = []
+    p_list = []
+    for line in line_list:
+        p = float(line[-1])
+        chi_list.append(line)
+        p_list.append(p)
+    pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_i')[1]
+    for x in range(len(pval_corr)):
+        chi_list[x].append(pval_corr[x])
+    chi_list.sort(key = lambda x: x[-1])
+    outfile = open(outfile, 'w')
+    outfile.write("OG\tnsam\tobs_S\tobs_div\tlength_pol\tlength_div\tfactor_chrn\texp_S\texpVar_S\texp_div\texpVar_D\texp_theta\tpartialHKA\tpval\tbh5_p\n")
+    for locus in chi_list:
+        outfile.write("\t".join([str(i) for i in locus]) + "\n")
+    outfile.close()
+    faster = open(fasterfile, 'w')
+    faster.write("OG\tnsam\tobs_S\tobs_div\tlength_pol\tlength_div\tfactor_chrn\texp_S\texpVar_S\texp_div\texpVar_D\texp_theta\tpartialHKA\tpval\tbh5_p\n")
+    slower = open(slowerfile, 'w')
+    slower.write("OG\tnsam\tobs_S\tobs_div\tlength_pol\tlength_div\tfactor_chrn\texp_S\texpVar_S\texp_div\texpVar_D\texp_theta\tpartialHKA\tpval\tbh5_p\n")
+    for locus in chi_list:
+#        print locus
+        if float(locus[-1]) < 0.01:
+            obs_s = float(locus[2])
+            exp_s = float(locus[7])
+            if obs_s > exp_s:
+                faster.write("\t".join([str(i) for i in locus]) + "\n")
+            else:
+                slower.write("\t".join([str(i) for i in locus]) + "\n")
+    faster.close()
+    slower.close()
+    
+
+def jody_correction(line_list, outfile, fasterfile, slowerfile):
+    ###NEED TO GET DEGREES OF FREEDOM TOO!!!!
+    chi_list = []
+    p_list = []
+    for line in line_list:
+#        print "jody"
+#        print line
+        p = float(line.strip().split()[-1])
+        chi_list.append(line.split())
+        p_list.append(p)
+    pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_i')[1]
+    for x in range(len(pval_corr)):
+        chi_list[x].append(pval_corr[x])
+    chi_list.sort(key = lambda x: x[-1])
+    outfile = open(outfile, 'w')
+    outfile.write("OG\tobs_div\texp_div\tobs_poly\texp_poly\tp_val\tbh5_p\n")
+    for locus in chi_list:
+        outfile.write("\t".join([str(i) for i in locus]) + "\n")
+    outfile.close()
+    faster = open(fasterfile, 'w')
+    faster.write("OG\tobs_div\texp_div\tobs_poly\texp_poly\tp_val\tbh5_p\n")
+    slower = open(slowerfile, 'w')
+    slower.write("OG\tobs_div\texp_div\tobs_poly\texp_poly\tp_val\tbh5_p\n")
+    for locus in chi_list:
+#        print locus
+        if float(locus[-1]) < 0.01:
+            obs_s = float(locus[1])
+            exp_s = float(locus[2])
+            if obs_s > exp_s:
+                faster.write("\t".join([str(i) for i in locus]) + "\n")
+            else:
+                slower.write("\t".join([str(i) for i in locus]) + "\n")
+    faster.close()
+    slower.close()
+
+
 def hka_worker(attribute_list):
     inspecies = attribute_list[0]
     outspecies = attribute_list[1]
@@ -361,6 +570,25 @@ def hka_worker(attribute_list):
     og_num = attribute_list[3]
     in_gene = attribute_list[4]
     out_gene = attribute_list[5]
+    out_path = attribute_list[6]
+    align_dir = attribute_list[7]
+    neighbor_dic = attribute_list[8]                                 
+#    ortho_dic = attribute_list[8]
+#    in_gene_dic = attribute_list[9]
+#    out_gene_dic = attribute_list[10]
+#    neighbor_dic = {}
+#    for neighbor_name in in_gene.neighbors:
+#        neighbor_og = get_og_num(neighbor_name, ortho_dic)
+#        if not neighbor_og:
+#            continue
+#        if check_og_complete(neighbor_og, inspecies, outspecies, ortho_dic):
+#            outneighbor_name = ortho_dic[neighbor_og][outspecies][0][:-3]
+#            neighbor_dic[neighbor_og] = (in_gene_dic[neighbor_name], out_gene_dic[outneighbor_name])
+
+
+    print og_num
+    if not os.path.exists("%s/og_cds_%s.1.fas" % (align_dir, og_num)):
+        return "OG_%s\tinsufficient_sampling\t" % og_num
     inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene, out_gene, seq_type)
     if len(inseq) < 100 or len(outseq) < 100:
         return "OG_%s\ttoo_short\n" % (og_num)
@@ -372,11 +600,326 @@ def hka_worker(attribute_list):
         inseq = inseq[0:len(outseq)]
     if len(inseq) < len(outseq):
         outseq = outseq[0:len(inseq)]
-    average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num)
-    if 1.0 * average_diff / align_len > 0.20:
+#    average_diff, align_len = muscle_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num)
+    pairwise_data = mafft_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num, in_gene, out_gene, out_path)
+    if pairwise_data == "no_alignment":
+        return "OG_%s\ttoo_different\n" % (og_num)
+    average_diff = pairwise_data[0]
+    align_len = pairwise_data[1]
+    inpoly = pairwise_data[2]
+    outpoly = pairwise_data[3]
+    inlen = pairwise_data[4]
+    outlen = pairwise_data[5]
+    if align_len < 500:
+        return "OG_%s\ttoo_different\n" % (og_num)
+    if 1.0 * average_diff / align_len > 0.10:
         return "OG_%s\ttoo_different\t%s\n" % (og_num, 1.0 * average_diff / align_len)
+    if 1.0 * align_len / inlen < 0.90:
+        return "OG_%s\ttoo_different\t%s\n" % (og_num, 1.0 * align_len / inlen)
+    if insample < 5 or outsample < 5:
+        return "OG_%s\tinsufficient_sampling\t" % og_num
+    #this is the line for Jody Hey's HKA
 #    return "OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff)
-    return "OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample*2, inpoly, average_diff, len(inseq), align_len, 1)
+    directfile = open("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w')
+    directfile.write("Title: ingroup: %s, outgroup: %s\n" % (inspecies, outspecies))
+    directfile.write("nloci 2\n")# % (len(hkadirect_lines)))
+    directfile.write("IDlocus\tnsam\tSegSites\tDivergence\tlength_pol\tlength_div\tfactor_chrn\n")
+
+    outfile = open("%s/hka_tests/OG_%s_%s_%s_%s_hka.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w')
+    neighbor_stats_list = [] 
+    direct_stats_list = []
+    for neighbor_og, neighbor in neighbor_dic.items():
+        neighbor_stats = fourfold_degenerate_string([neighbor[0], neighbor[1], align_dir, neighbor_og, inspecies, outspecies])
+
+        if "insufficient_sampling" not in neighbor_stats:
+            neighbor_stats_list.append(neighbor_stats[1])
+            direct_stats_list.append(neighbor_stats[0])
+#            print neighbor_stats[0]
+    direct_background = sum_fourf_list(direct_stats_list)
+#    print direct_background
+#    outfile.write("HKA table\n%s\n%s %s\n" % (len(neighbor_strings) + 1, inspecies, outspecies))
+    if inspecies == "LALB":
+        insample = insample
+    else:
+        insample = insample * 2
+    if outspecies == "LALB":
+        outsample = outsample
+    else:
+        outsample = outsample * 2
+    outfile.write("HKA table\n%s\n%s %s\n" % (len(neighbor_stats_list) + 1, inspecies, outspecies))
+    outfile.write("%s_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, seq_type[0:2], 1.0, inlen, outlen, align_len, int(insample), int(outsample), inpoly, outpoly, average_diff))
+    for neighbor in neighbor_stats_list:
+        outfile.write(neighbor)
+#    outfile.write(fourf_genome_line)
+#    outfile.write(sum_fourf_list)
+
+#    for neighbor_string in neighbor_strings:
+#        outfile.write(neighbor_string)
+
+#            outfile.write(neighbor_string)
+#    inseq, outseq = get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies)
+#    fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
+#    in_poly_syn = in_gene.syn_count
+#    out_poly_syn = out_gene.syn_count
+    #then we get the number of aligned potential synonymous sites
+#    align_potent_syn, align_potent_nsyn = potential_aligned_sites(inseq, outseq)
+#    outfile.write("%s_syn\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, in_gene.potent_syn, out_gene.potent_syn, align_potent_syn, insample*2, outsample*2, in_poly_syn, out_poly_syn, fix_syn))
+    outfile.close()
+    switch_dir = os.getcwd()
+    os.chdir("%s/hka_tests" % out_path)
+    cmd = ["/Genomics/kocherlab/berubin/local/src/HKA/hka", "-DOG_%s_%s_%s_%s_hka.txt" % (og_num, inspecies, outspecies, seq_type), "-R%s/hka_tests/OG_%s_%s_%s_%s_hka_results" % (out_path, og_num, inspecies, outspecies, seq_type), "-S100"]
+    FNULL = open(os.devnull, 'w')
+    subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+    os.chdir(switch_dir)
+    p_val, obs_poly, exp_poly = parse_hka_result(inspecies, outspecies, seq_type, "%s/hka_tests/OG_%s_%s_%s_%s_hka_results.hka" % (out_path, og_num, inspecies, outspecies, seq_type))
+    directfile.write("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample, inpoly, average_diff, inlen, align_len, 1))
+    directfile.write(direct_background)
+    directfile.close()
+    cmd = ["/Genomics/kocherlab/berubin/local/src/HKAdirect/bin/HKAdirect", "%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, og_num, inspecies, outspecies, seq_type)]
+    with open("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w') as outfile:
+        subprocess.call(cmd, stdout = outfile)
+    outfile.close()
+    directp = get_direct_p("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, og_num, inspecies, outspecies, seq_type))
+    if p_val == "HKA_failed":
+        return "HKA_failed","OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample, inpoly, average_diff, inlen, align_len, 1), directp
+    #the first string here is the result from this individual run of Hey's HKA
+    #the second string is the input line for HKAdirect
+    #the third is the output of pairwise hkadirect
+    return "OG_%s\t%s\t%s\t%s\n" % (og_num, obs_poly, exp_poly, p_val), "OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample, inpoly, average_diff, inlen, align_len, 1), directp
+    #this is the line for HKAdirect
+#    return "OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample*2, inpoly, average_diff, len(inseq), align_len, 1)
+
+def get_direct_p(direct_resultsfile):
+    reader = open(direct_resultsfile, 'rU')
+    for line in reader:
+#        print line
+        if line.startswith("OG_"):
+            data_line = line.split()
+        if line.startswith("Significance"):
+#            print "significance"
+#            print line
+            pval = float(line.split("=")[-1].strip())
+            data_line.append(pval)
+            break
+    return data_line
+
+def fourfold_degenerate_string(attribute_list):
+    ingene = attribute_list[0]
+    outgene = attribute_list[1] 
+    align_dir = attribute_list[2]
+    og = attribute_list[3] 
+    inspecies = attribute_list[4]
+    outspecies = attribute_list[5]
+#    neighbor_og = attribute_list[6]
+    if inspecies == "LALB":
+        insample = ingene.average_n
+    else:
+        insample = ingene.average_n * 2
+    if outspecies == "LALB":
+        outsample = outgene.average_n
+    else:
+        outsample = outgene.average_n * 2
+    if not os.path.exists("%s/og_cds_%s.1.fas" % (align_dir, og)):
+        return "OG_%s\tinsufficient_sampling\t" % og
+    if insample < 5:
+        return "insufficient_sampling"
+    inseq, outseq = get_prank_aligned_seqs(align_dir, og, inspecies, outspecies)
+    fix_fourfold = count_fourfold(inseq, outseq)
+    in_poly_fourf = ingene.fourfold
+    out_poly_fourf = outgene.fourfold
+    in_potent_fourfold = ingene.potent_fourfold
+    out_potent_fourfold = outgene.potent_fourfold
+#    print "OG %s" % og
+#    print ingene.name
+#    print outgene.name
+#    print in_potent_fourfold
+ #   print out_potent_fourfold
+    align_potent_fourf = potential_aligned_fourfold_sites(inseq, outseq)
+    
+    return (fix_fourfold, in_poly_fourf, out_poly_fourf, in_potent_fourfold, out_potent_fourfold, align_potent_fourf, int(insample), int(outsample)), ("%s_4d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og, 1.0, in_potent_fourfold, out_potent_fourfold, align_potent_fourf, int(insample), int(outsample), in_poly_fourf, out_poly_fourf, fix_fourfold))
+    
+def sum_fourf_list(fourf_list):
+    fix_fourfold = in_poly_fourf = out_poly_fourf = in_potent_fourfold = out_potent_fourfold = align_potent_fourf = insample = outsample = 0
+    x = 0
+#    while x < len(fourf_list):
+#        print fourf_list[x]
+#        if "insufficient" in fourf_list[x]:
+#            del fourf_list[x]
+#        if len(fourf_list[x]) < 6:
+#            print fourf_list[x]
+
+#        x += 1
+    num_loci = 0.0
+    for fourf_stats in fourf_list:
+        if "insufficient" in fourf_stats:
+            continue
+#        if len(fourf_stats) < 6:
+#            print fourf_stats
+#            continue
+
+#    for cur_fix_fourfold, cur_in_poly_fourf, cur_out_poly_fourf, cur_in_potent_fourfold, cur_out_potent_fourfold, cur_align_potent_fourf in fourf_list:
+#        fix_fourfold += cur_fix_fourfold
+#        in_poly_fourf += cur_in_poly_fourf
+#        out_poly_fourf += cur_out_poly_fourf
+#        in_potent_fourfold += cur_in_potent_fourfold
+#        out_potent_fourfold += cur_out_potent_fourfold
+#        align_potent_fourf += cur_align_potent_fourf
+        fix_fourfold += fourf_stats[0]
+        in_poly_fourf += fourf_stats[1]
+        out_poly_fourf += fourf_stats[2]
+        in_potent_fourfold += fourf_stats[3]
+        out_potent_fourfold += fourf_stats[4]
+        align_potent_fourf += fourf_stats[5]
+        insample += fourf_stats[6]
+        outsample += fourf_stats[7]
+        num_loci += 1
+    return "4d\t%s\t%s\t%s\t%s\t%s\t%s\n" % (round(insample / num_loci), in_poly_fourf, fix_fourfold, in_potent_fourfold, align_potent_fourf, 1)
+
+        #the line below is for Jody Hey's HKA
+#    return "all_f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (1.0, in_potent_fourfold, out_potent_fourfold, align_potent_fourf, round(insample / num_loci), round(outsample / num_loci), in_poly_fourf, out_poly_fourf, fix_fourfold)
+
+def parse_hka_result(inspecies, outspecies, seq_type, hkafile):
+    reader = open(hkafile, 'rU')
+    poly_data = True
+    fixed_data = False
+    line = reader.readline()
+    p_val = -1
+    chi_val = -1
+    flank_div = []
+    in_flank_poly = []
+    while "program by Jody Hey" not in line:
+        line = reader.readline()
+        if "LOCI AND LENGTHS" in line:
+            line = reader.readline()
+            cur_line = line.split()
+            if int(cur_line[2]) == 0 and int(cur_line[3]) == 0 and int(cur_line[4]) == 0:
+                return "HKA_failed", "NA", "NA", "NA", "NA"
+#            line = reader.readline()
+#            line = reader.readline()
+#            line = reader.readline()
+#            line = reader.readline()
+            if "program by Jody Hey" in line:
+                return "HKA_failed", "NA", "NA", "NA", "NA"
+        if line.startswith("*** LOCUS") and poly_data:
+            line = reader.readline()
+            line = reader.readline()
+            in_flank_poly = line.split()[2:4]
+            line = reader.readline()
+            out_flank_poly = line.split()[2:4]
+            line = reader.readline()
+            line = reader.readline()
+            line = reader.readline()
+            line = reader.readline()
+            in_syn_poly = line.split()[2:4]
+            line = reader.readline()
+            out_syn_poly = line.split()[2:4]
+            poly_data = False
+            fixed_data = True
+        #THIS NEXT BIT IS ONLY FOR TWO LOCI
+        if line.startswith("*** LOCUS") and fixed_data:
+            line = reader.readline()
+            line = reader.readline()
+            flank_div = line.split()[0:2]
+            reader.readline()
+            reader.readline()
+            syn_div = reader.readline().split()[0:2]
+            fixed_data = False
+        if "SUM OF DEVIATIONS:" in line:
+#            print "sum"
+#            print line
+            chi_val = float(line.strip().split(" ")[-1])
+#            print chi_val
+#            p_val = chisqprob(chi_val, 2)
+        if line.startswith("Degrees of Freedom"):
+            dof = int(line.strip().split(" ")[3])
+            break
+#    print flank_div
+#    return p_val, float(flank_div[0]), float(flank_div[1]), float(in_flank_poly[0]), float(in_flank_poly[1])
+    if chi_val == -1:
+        return "HKA_failed", "NA", "NA"
+    p_val = chisqprob(chi_val, dof)
+    return p_val, float(in_flank_poly[0]), float(in_flank_poly[1])
+        
+        
+
+def get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies):
+    reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
+    for rec in reader:
+        if rec.id[0:4] == inspecies:
+            inseq = str(rec.seq)
+            inseq_name = rec.id[:-3]
+        elif rec.id[0:4] == outspecies:
+            outseq = str(rec.seq)
+            outseq_name = rec.id[:-3]
+#    print og_num
+#    print inseq_name
+#    print outseq_name
+    return inseq, outseq
+
+def align_len(seq1, seq2):
+    missing = ["N", "-"]
+    total_len = 0
+    for x in range(len(seq1)):
+        if seq1[x] not in missing and seq2[x] not in missing:
+            total_len += 1
+    return total_len
+
+def potential_aligned_sites(inseq, outseq):
+    x = 0
+    syn_sites = 0
+    nsyn_sites = 0
+    outsyn_sites = 0
+    potent_dic = changes.potent_dic()
+    while x < len(inseq):
+        ambig_codon = False
+        incodon = inseq[x:x+3].upper()
+        outcodon = outseq[x:x+3].upper()
+        for ambig in ["N", "M", "R", "W", "S", "Y", "K", "V", "H", "D", "B", "-"]:
+            if ambig in incodon or ambig in outcodon:
+                ambig_codon = True
+        if ambig_codon:
+            x = x + 3
+            ambig_codon = False
+            continue
+        nsyn_sites += potent_dic["N"][incodon]
+        syn_sites += potent_dic["S"][incodon]
+        outsyn_sites += potent_dic["S"][outcodon]
+        x = x + 3
+    if outsyn_sites <= syn_sites:
+        syn_sites = outsyn_sites
+    return syn_sites, nsyn_sites
+
+def potential_aligned_fourfold_sites(inseq, outseq):
+    x = 0
+    fourf_sites = 0
+    fourfold_list = changes.fourfold_codons()
+#    print inseq
+#    print outseq
+#    print fourfold_list
+    incount = 0
+    while x < len(inseq):
+        ambig_codon = False
+        incodon = str(inseq[x:x+3].upper())
+        outcodon = str(outseq[x:x+3].upper())
+#        print incodon
+#        print outcodon
+        for ambig in ["N", "M", "R", "W", "S", "Y", "K", "V", "H", "D", "B", "-"]:
+            if ambig in incodon or ambig in outcodon:
+                ambig_codon = True
+        if ambig_codon:
+            x = x + 3
+            ambig_codon = False
+            continue
+        if incodon in fourfold_list: #and outcodon in fourfold_list:
+#            print "incodon"
+            incount += 1
+            if str(incodon)[0] == str(outcodon)[0] and str(incodon)[1] == str(outcodon)[1]:
+                fourf_sites += 1
+#                print fourf_sites
+        x = x + 3
+#    print fourf_sites
+#    print "incount %s" % incount
+    return fourf_sites
 
 
 def gather_hka_data(inspecies_gene, outspecies_gene, seq_type):
@@ -446,6 +989,72 @@ def muscle_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num):
         if align_dic["inseq"][x] != align_dic["outseq"][x]:
             counter += 1
     return counter, len(align_dic["inseq"]) - indel_count
+
+def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene, out_gene, out_path):
+    #Align two sequences using muscle and return the number of 
+    #differences between them.
+    if not os.path.exists("%s/conservation_files/" % out_path):
+        os.mkdir("%s/conservation_files" % out_path)
+    intuple, outtuple = conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, "%s/conservation_files" % out_path)
+    if intuple[1] - intuple[0] < 500 or outtuple[1] - outtuple[0] < 500:
+        return "no_alignment"
+    if abs(intuple[1] - intuple[0] - outtuple[1] - outtuple[0]) > 500:
+        return "no_alignment"
+    if not os.path.exists("%s/mafft_files/" % out_path):
+        os.mkdir("%s/mafft_files" % out_path)
+    seqfile = open("%s/mafft_files/OG_%s_%s_%s.fa" % (out_path, og_num, inspecies, outspecies), 'w')
+#    seqfile.write(">inseq\n%s\n" % (seq1))
+#    seqfile.write(">outseq\n%s\n" % (seq2))
+    seqfile.write(">inseq\n%s\n" % (seq1[intuple[0]:intuple[1]]))
+    seqfile.write(">outseq\n%s\n" % (seq2[outtuple[0]:outtuple[1]]))
+
+    seqfile.close()
+    FNULL = open(os.devnull, 'w')
+    with open("%s/mafft_files/OG_%s_%s_%s.afa" % (out_path, og_num, inspecies, outspecies), 'w') as outfile:
+        subprocess.call(["linsi", "%s/mafft_files/OG_%s_%s_%s.fa" % (out_path, og_num, inspecies, outspecies)], stdout = outfile, stderr=FNULL)
+
+    outfile.close()
+    align_dic = {}
+    reader = SeqIO.parse("%s/mafft_files/OG_%s_%s_%s.afa" % (out_path, og_num, inspecies, outspecies), format = 'fasta')
+    for rec in reader:
+        align_dic[rec.id] = str(rec.seq)
+    average_diff = 0
+    missing_data = ["N", "-", "n"]
+    indel_count = 0
+    if in_gene.strand == -1:
+        in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.end, "inseq")
+    else:
+#        in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_start + intuple[0], "inseq")
+        in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_end - intuple[1], "inseq")
+    if out_gene.strand == -1:
+#        out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.end, "outseq")
+        out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_end - outtuple[1], "outseq")
+    else:
+        out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_start + outtuple[0], "outseq")
+#    print align_dic
+    for x in range(len(align_dic["inseq"])):
+        if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
+            indel_count += 1
+            continue
+        insite_list = [align_dic["inseq"][x].lower()]
+
+        outsite_list = [align_dic["outseq"][x].lower()]
+        if x in in_gene_alt_dic.keys():
+            insite_list.append(str(in_gene_alt_dic[x]).lower())
+        if x in out_gene_alt_dic.keys():
+            outsite_list.append(str(out_gene_alt_dic[x]).lower())
+        overlap = False
+#        print x
+#        print insite_list
+#        print outsite_list
+        for nuc in insite_list:
+            if nuc in outsite_list:
+                overlap = True
+        if not overlap:
+            average_diff += 1
+#        if align_dic["inseq"][x] != align_dic["outseq"][x]:
+#            temp += 1
+    return average_diff, len(align_dic["inseq"]) - indel_count, len(in_gene_alt_dic), len(out_gene_alt_dic), intuple[1] - intuple[0], outtuple[1] - outtuple[0]
 
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path, num_threads):
     get_species_data(inspecies, num_threads)
@@ -668,6 +1277,24 @@ def count_sub_types(seq1, seq2):
     syns = n_diff_count - nsyns
     return syns, nsyns
 
+def count_fourfold(seq1, seq2):
+    fourfold_list = changes.fourfold_codons()
+#    print fourfold_list
+#    print seq1
+#    print seq2
+    empty_chars = ["N", "-", "X"]
+    x = 0
+    fourfold_count = 0
+    while x < len(seq1):
+        if seq1[x:x+3] in fourfold_list:
+            if seq1[x:x+2] == seq2[x:x+2]:
+                if seq1[x+2] != seq2[x+2]:
+ #                   print seq1[x:x+3]
+ #                   print seq2[x:x+3]
+                    fourfold_count += 1
+        x = x + 3
+ #   print fourfold_count
+    return fourfold_count
 
 def prank_align_worker(og_file, outdir, use_backbone, phylogeny_file):
     #the worker method for multiprocessing the prank alignments
@@ -714,11 +1341,16 @@ def prank_align(og_list, indir, outdir, use_backbone, phylogeny_file, num_thread
 def get_cds():
     #get dictionary containing CDS for all genomes
     seq_dic = {}
-    for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "LFIG", "AAUR"]:
+    for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR"]:
         reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (species, species), format = 'fasta')
         seq_dic[species] = {}
         for rec in reader:
             seq_dic[species][rec.id] = str(rec.seq)
+    species = "LALB"
+    reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/LALB/LALB_v3/LALB/LALB_OGS_v1.0_longest_isoform.cds.fasta", format = 'fasta')
+    seq_dic["LALB"] = {}
+    for rec in reader:
+        seq_dic[species][rec.id] = str(rec.seq)
     reader = SeqIO.parse("/Genomics/kocherlab/berubin/annotation/reference_genomes/Dufourea_novaeangliae_v1.1.cds.fa", format = 'fasta')
     species = "Dnov"
     seq_dic[species] = {}
@@ -809,3 +1441,81 @@ def limit_list(og_list, lower_bound, higher_bound):
     return new_list
 
             
+def conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, working_dir):
+    outfile = open("%s/OG_%s_%s_%s_in.fa" % (working_dir, og_num, inspecies, outspecies), 'w')
+    outfile.write(">%s\n%s\n" % (inspecies, seq1))
+#    outfile.write(">outseq\n%s\n" % (outspecies, seq2))
+    outfile.close()
+    query_seq = open("%s/OG_%s_%s_%s_out.fa" % (working_dir, og_num, inspecies, outspecies), 'w')
+    query_seq.write(">%s\n%s\n" % (outspecies, seq2))
+    query_seq.close()
+    cmd = ["/Genomics/kocherlab/berubin/local/src/ncbi-blast-2.5.0+/bin/makeblastdb", "-in", "%s/OG_%s_%s_%s_in.fa" % (working_dir, og_num, inspecies, outspecies), "-out", "%s/OG_%s_%s_%s_in_db" % (working_dir, og_num, inspecies, outspecies), "-dbtype", "nucl"]
+#    cmd = ["makeblastdb -in /Genomics/kocherlab/berubin/annotation/orthology/LALB_LCAL_only/conservation_files/OG_0_LALB_LCAL_in.fa -dbtype nucl"]
+    FNULL = open(os.devnull, 'w')
+    subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+    cmd = ["/Genomics/kocherlab/berubin/local/src/ncbi-blast-2.5.0+/bin/blastn", "-query", "%s/OG_%s_%s_%s_out.fa" % (working_dir, og_num, inspecies, outspecies), "-db", "%s/OG_%s_%s_%s_in_db" % (working_dir, og_num, inspecies, outspecies), "-outfmt", "6", "-out", "%s/OG_%s_%s_%s.txt" % (working_dir, og_num, inspecies, outspecies)]
+    subprocess.call(cmd)
+    longest_intuple, longest_outtuple = parse_conserved_noncoding("%s/OG_%s_%s_%s.txt" % (working_dir, og_num, inspecies, outspecies))
+    return longest_intuple, longest_outtuple
+
+def parse_conserved_noncoding(blastfile):
+    if os.stat(blastfile).st_size == 0:
+        return (0, 0), (0, 0)
+    reader = open(blastfile, 'rU')
+    coord_pairs = {}
+    for line in reader:
+        cur_line = line.split()
+        if float(cur_line[2]) < 90:
+            continue
+        out_tuple = (int(cur_line[6]), int(cur_line[7]))
+        in_tuple = (int(cur_line[8]), int(cur_line[9]))
+        coord_pairs[in_tuple] = out_tuple
+    if len(coord_pairs.keys()) == 0:
+        return (0, 0), (0, 0)
+    in_tuple_list = coord_pairs.keys()
+    for in_coords in coord_pairs.keys():
+        in_tuple_list = overlap(in_coords, in_tuple_list)
+    out_tuple_list = coord_pairs.values()
+    for out_coords in coord_pairs.values():
+        out_tuple_list = overlap(out_coords, out_tuple_list)
+    longest_intuple = in_tuple_list[0]
+    for in_tuple in in_tuple_list:
+        if in_tuple[1]-in_tuple[0] > longest_intuple[1] - longest_intuple[0]:
+            longest_tuple = in_tuple
+    longest_outtuple = out_tuple_list[0]
+    for out_tuple in out_tuple_list:
+        if out_tuple[1]-out_tuple[0] > longest_outtuple[1] - longest_outtuple[0]:
+            longest_outtuple = out_tuple
+    return longest_intuple, longest_outtuple
+
+         
+def overlap(mytuple, tuplelist):
+    included = False
+    i = 0
+    while i < len(tuplelist):
+        cur_tuple = tuplelist[i]
+        if mytuple[0] <= cur_tuple[0] and mytuple[1] >= cur_tuple[0]-50:
+            if mytuple[1] >= cur_tuple[1]:
+                new_tuple = mytuple
+                mytuple = new_tuple
+                del tuplelist[i]
+                i = -1
+            else:
+                new_tuple = (mytuple[0], cur_tuple[1])
+                mytuple = new_tuple
+                del tuplelist[i]
+                i = -1
+        elif mytuple[1] >= cur_tuple[1] and mytuple[0] <= cur_tuple[1] + 50:
+            if mytuple[0] >= cur_tuple[0]:
+                new_tuple = (cur_tuple[0], mytuple[1])
+                mytuple = new_tuple
+                del tuplelist[i]
+                i = -1   
+        elif mytuple[0] >= cur_tuple[0] and mytuple[1] <= cur_tuple[1]:
+            included = True
+            break
+        i += 1
+    if not included:
+        tuplelist.append(mytuple)
+    return tuplelist
+   
