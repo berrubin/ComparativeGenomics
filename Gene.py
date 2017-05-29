@@ -47,37 +47,25 @@ class Gene:
         self.flank_sub_coords = []
  
     def get_new_coord(self, aligned_seq, old_coord):
-#        if old_coord == 13425589:
-#        print self.name
-#        print old_coord
         new_coord = old_coord
         old_index = 0
         new_index = old_coord
         total_gap = 0
         if aligned_seq[:new_index].count("-") == 0:
             return new_index
-#        if old_coord == 13425589:
-#            print new_index
         while True:
             gap_count = aligned_seq[old_index:new_index].count("-")
-#            print gap_count
             total_gap = total_gap + gap_count
-#            print total_gap
             old_index = new_index
             if gap_count == 0:
                 new_index = new_index + 1
             else:
                 new_index = new_index + gap_count
             
-#            print new_index
             if len(aligned_seq[:new_index]) - aligned_seq[:new_index].count("-") == old_coord:
-#                print new_index
                 return new_index
 
     def aligned_alts(self, aligned_seq, start_coord):
-#        print start_coord
-#        print self.flank_start
-#        print self.flank_end
         region_alt_dic = {}
         for k in self.alts.keys():
             if k >= start_coord and k < start_coord + len(aligned_seq) - aligned_seq.count("-"):
@@ -93,6 +81,10 @@ class Gene:
                 
 
     def check_polymorphisms_fixed(self, align_dic, start_coord, in_or_out):
+        #this method readjusts the coordinates for polymorphisms into
+        #an aligned sequence space
+        #"start_coord" is just the beginning of whatever feature is 
+        #currently being examined. Use this for noncoding sequences
         cur_seq = align_dic[in_or_out]
         if self.strand == -1:
             cur_seq = str(Seq.Seq(cur_seq).reverse_complement())
@@ -120,18 +112,30 @@ class Gene:
 
             
     def zeroed_tuples(self, tuple_list):
+        #take a list of tuples (CDS starts and ends or intron starts
+        #and ends) and map them to new tuples that represent their
+        #positions in a sequence space without intervening sequence
+        #(e.g. aligned CDS)
         new_tuple_dic = {}
         base_index = tuple_list[0]
+        new_tuple = (0, base_index[1] - base_index[0])
+        new_tuple_dic[base_index] = new_tuple
+        intron_length = 0
+        prev_coord = tuple_list[0]
         for coord_tuple in tuple_list:
             if coord_tuple == base_index:
                 continue
-            adjustment = base_index[0] + coord_tuple[0] - base_index[1]
+            intron_length += coord_tuple[0] - prev_coord[1]
+            adjustment = intron_length + base_index[0] 
             new_tuple = (coord_tuple[0] - adjustment, coord_tuple[1] - adjustment)
             new_tuple_dic[coord_tuple] = new_tuple
-            base_index = new_tuple
+            base_index = (tuple_list[0][0], coord_tuple[1])
+            prev_coord = coord_tuple
         return new_tuple_dic
 
-    def new_coding_coord(self, aligned_seq, coord_list, old_coord):
+    def new_coding_coord(self, aligned_seq, coord_list, zeroed_tuples, old_coord):
+        #return an individual coordinate zeroed to the new coordinate
+        #space
         if self.strand == -1:
             cur_seq = str(Seq.Seq(aligned_seq).reverse_complement())
         else:
@@ -139,7 +143,7 @@ class Gene:
         for coord_tuple in coord_list:
             if old_coord >= coord_tuple[0] and old_coord < coord_tuple[1]:
                 target_coords = coord_tuple
-        new_tuple_dic = self.zeroed_tuples(coord_list)
+        new_tuple_dic = zeroed_tuples
         shift = target_coords[0] - new_tuple_dic[target_coords][0]
         new_coord = old_coord - shift
         if self.strand == 1:
@@ -147,23 +151,31 @@ class Gene:
         else:
             return len(aligned_seq) - new_coord - 1
 
-    def coding_fixed_align(self, align_dic, in_or_out):
+    def coding_fixed_align(self, aligned_seq):
+        #get all of the polymorphisms in the aligned CDS and return
+        #a dictionary where the indices have been adjusted to represent
+        #the positions in the alignment
         region_alt_dic = {}
         for k in self.alts.keys():
-            for cds_tuple in cds_coords:
+            for cds_tuple in self.cds_coords:
                 if k >= cds_tuple[0] and k < cds_tuple[1]:
                     region_alt_dic[k] = self.alts[k]
         aligned_vars = {}
+        zeroed_tuples = self.zeroed_tuples(self.cds_coords)
         for k in region_alt_dic.keys():
-            new_coord = self.new_coding_coord(align_dic[in_or_out], self.cds_coords, old_coord)
+            old_coord = k
+            new_coord = self.new_coding_coord(aligned_seq, self.cds_coords, zeroed_tuples, old_coord)
             if self.strand == 1:
                 aligned_vars[new_coord] = region_alt_dic[k]
             else:
-                aligned_vars[new_coord] = str(Seq.Seq(region_alt_dic[k]).reverse_complement())
+                aligned_vars[new_coord] = str(Seq.Seq(str(region_alt_dic[k])).reverse_complement())
         return aligned_vars
                     
 
     def set_neighbors(self, gene_list):
+        #identify the closest neighbors of the gene.
+        #it is currently hardcoded to identify 20 neighbors
+        #but this can be adjusted to whatever
         print self.name
         neighbor_dic = {}
         closest_neighbors = []
@@ -262,12 +274,15 @@ class Gene:
             for exon in self.cds_coords:
                 if site >= exon[0] and site <= exon[1]:
                     cds_dic[site] = nuc
+        #if you want to check the reconstructed sequences against the 
+        #sequences in "seq_dic" (i.e. those in a CDS file somwhere), 
+        #that can be done with the code below.
 #        recon_seq = "".join(cds_dic.values())
 #        if self.strand == -1:
 #            recon_seq = str(Seq.Seq(recon_seq).reverse_complement())
 #        if recon_seq != seq_dic[self.name]:
 #            raise ImportError("Failed to reconstruct CDS for %s" % self.name)
-        self.cds = cds_dic #********
+        self.cds = cds_dic 
         cds_dic = {}
 
     def noncoding_subs(self):
@@ -309,15 +324,14 @@ class Gene:
         self.utr5_subs = utr5_subs
 
     def syn_and_nsyn(self):
+        #count the number of synonymous and nonsynonymous polymorphisms
+        #in this gene
         syn_count = 0
         nsyn_count = 0
         fourfold_count = 0
         nsyn_coords = []
         syn_coords = []
         fourf_coords = []
-#        if self.name != "LMAL_05156":
-#            return
-#        print self.name
         for index in self.alts.keys():
             old_codon = ""
             new_codon = []
@@ -330,88 +344,46 @@ class Gene:
                     cds_index = self.cds.keys().index(index)
 
                     if cds_index + variant_len >= len(self.cds):
-                        variant_len = len(self.cds) - cds_index - 1 #not sure about - 1
+                        variant_len = len(self.cds) - cds_index - 1 
                         self.alts[index] = str(self.alts[index])[0:variant_len]
 
-#                    print self.alts[index]
-#                    print index
-#                    print cds_index
-#                    codon_start = index - (cds_index % 3)
-#                    codon_start = cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
-                    codon_start = cds_index - (cds_index % 3) #+ ((variant_len / 3) * 3)
+                    codon_start = cds_index - (cds_index % 3)
                     leftover_len = variant_len - (3 - cds_index % 3)
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
-#                    for x in range(3 + ((variant_len / 3) * 3) + variant_len % 3 * 3):
-#                    print codon_start
-#                    print leftover_len
-#                    print additional_len
-#                    print variant_len
                     for x in range(3+additional_len):
                         new_index = codon_start + x
                         new_index = self.cds.keys()[new_index]
-#                        old_codon += self.cds[codon_start + x]
                         old_codon += self.cds[new_index]
-#                        new_codon.append(self.cds[codon_start + x])
                         new_codon.append(self.cds[new_index])
-#                        print new_codon
-#                        print old_codon
-#                    new_codon[cds_index % 3] = str(self.alts[index])
                     for x in range(variant_len):
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[x]
                     old_codon = Seq.Seq(old_codon)
                     new_codon = Seq.Seq("".join(new_codon))
-#                    print old_codon
-#                    print new_codon
 
                 elif self.strand == -1:
                     cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
-#                    print cds_index
                     if cds_index - variant_len < 0:
                         variant_len = cds_index
                         self.alts[index] = str(self.alts[index])[0:variant_len]
-#                    codon_start = index + (cds_index % 3) + ((variant_len / 3) * 3)
                     codon_start = len(self.cds.keys()) - 1 - cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
-#                    print codon_start
-#                    codon_start = self.cds.keys().index(index + (cds_index % 3) + ((variant_len / 3) * 3))
 
                     leftover_len = variant_len - (3 - cds_index % 3)
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
 
-#                    for x in range(3 + ((variant_len / 3) * 3)):
-#                    print leftover_len
-#                    print additional_len
-#                    print variant_len
-#                    while codon_start + additional_len >= len(self.cds):
-#                        additional_len -= 1
-#                        variant_len -= 1
-#                    if codon_start + additional_len > len(self.cds):
-                        
                     for x in range(3 + additional_len):
                         new_index = codon_start - x
                             
-#                        print new_index
                         new_index = self.cds.keys()[new_index]
-#                        if codon_start - x not in self.cds.keys():
-#                            new_index = self.reverse_adjacent_site(codon_start - x, codon_start )
-#                        old_codon += self.cds[codon_start - x]
                         old_codon += self.cds[new_index]
-#                        new_codon.append(self.cds[codon_start - x])
                         new_codon.append(self.cds[new_index])
-#                        print old_codon
-#                        print new_codon
-#                    new_codon[cds_index % 3] = str(self.alts[index])
-#                    print new_codon
                     for x in range(variant_len):
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[variant_len - x - 1]
-#                    print new_codon
                     old_codon = Seq.Seq(old_codon).complement()
                     new_codon = Seq.Seq("".join(new_codon)).complement()
-#                    print old_codon
-#                    print new_codon
                 old_aa = str(old_codon.translate())
                 new_aa = str(new_codon.translate())
                 if self.check_fourfold(old_codon, new_codon):
@@ -430,9 +402,6 @@ class Gene:
                         syn_coords.append(index)
                         temp_syn 
                 syn_count = syn_count - temp_nsyn
-#                else:
-                    #This must be a frameshift mutation which is a disaster and is, therefore, probably not a real variant so don't count it
-#                    continue
         self.syn_count = syn_count
         self.nsyn_count = nsyn_count
         self.fourfold = fourfold_count
@@ -440,38 +409,32 @@ class Gene:
 #        self.nsyn_coords = nsyn_coords
 #        self.fourf_coords = fourf_coords
 
-#    def reverse_adjacent_site(self, missing_site):
-#        new_site = -1
-#        for site in self.cds.keys():
-#            if site > missing_site:
-#                continue
-#            if site < missing_site:
-#                new_site = site
-#        return new_site
 
     def check_fourfold(self, old_codon, new_codon):
+        #check if two codons are fourfold degenerate sites of the same
+        #amino acid
         if str(old_codon) in changes.fourfold_codons():
             if str(old_codon)[0] == str(new_codon)[0] and str(old_codon)[1] == str(old_codon)[1] and str(old_codon)[2] != str(new_codon)[2]:
                 return True
         return False
 
     def average_sample_size(self, target_dic):
+        #returns average number of samples genotyped at this gene
+        #the complexity of this was reduced to decrease memory use
+        #and runtime but if exact numbers are required, that is 
+        #possible to obtain by use of self.called_counts
         return self.average_n
         size_sum = 0
         num_sites = 0
         for site in target_dic.keys():
             num_sites += 1
             size_sum += self.called_counts[site]
-        #trying to make it faster
-#        for site, size in self.called_counts.items():
-#            if site in target_dic.keys():
-#                num_sites += 1
-#                size_sum += size
         if num_sites == 0:
             return 0
         return size_sum / num_sites
 
     def get_genotypes(self, vcf_reader, flank_size):
+        #read in polymorphism data from VCF file
         scaf_len = vcf_reader.contigs[self.scaf][1]
         called_site_count = 0
         alt_dic = {}
@@ -479,8 +442,6 @@ class Gene:
         ref_dic = {}
         try:
             reader = vcf_reader.fetch(self.scaf, self.flank_start, self.flank_end)
-#            reader = vcf_reader.fetch("LMAL_scaf_1047", self.flank_start - 1, self.flank_end)
-#            print "made reader"
         except ValueError:
             print "can't get that bit of vcf"
             self.alts = {}
@@ -489,7 +450,7 @@ class Gene:
             self.potential_sites()
             return
             
-        for rec in reader: #vcf_reader.fetch(self.scaf, self.flank_start - 1, self.flank_end):
+        for rec in reader: 
             if rec.num_called < 4:
                 continue
             elif rec.num_called == rec.num_hom_ref:
@@ -508,7 +469,7 @@ class Gene:
                 alt_dic[rec.POS] = rec.ALT[0]
                 ref_dic[rec.POS] = rec.REF
                 called_count[rec.POS] = rec.num_called
-        #lower memory use? faster?
+        #if you need exact counts of sample numbers, use this
 #        self.called_counts = called_count
         if len(called_count.values()) == 0:
             self.average_n = 0
@@ -521,7 +482,7 @@ class Gene:
         self.syn_and_nsyn()
         self.potential_sites()
         self.noncoding_subs()
-        #reduce memory usage?
+        #reduce memory usage
         self.refs = {}
 #        self.alts = {}
         self.cds = {}
@@ -540,12 +501,9 @@ class Gene:
         syn_sites = 0
         nsyn_sites = 0
         potent_fourfold = 0
-#        print self.name
-#        print cur_cds
         while x < len(cur_cds):
             ambig_codon = False
             codon = cur_cds[x:x+3].upper()
-#            print codon
             for ambig in ["N", "M", "R", "W", "S", "Y", "K", "V", "H", "D", "B"]:
                 if ambig in codon:
                     ambig_codon = True
@@ -557,17 +515,16 @@ class Gene:
             syn_sites += potent_dic["S"][codon]
             if codon in fourfold_list:
                 potent_fourfold += 1
-#                print potent_fourfold
             x = x + 3
         self.potent_syn = syn_sites
         self.potent_nsyn = nsyn_sites
         self.potent_fourfold = potent_fourfold
-#        print cur_cds
-#        print "potential fourfold"
-#        print potent_fourfold
-#        print len(cur_cds)
             
     def add_site_to_samples(self, vcf_rec, sample_dic, index):
+        #I don't use this. this increases complexity, RAM, and runtime.
+        #however, identifying individual samples can allow for the
+        #construction of individual genotypes which might be useful
+        #for something someday.
         if vcf_rec.num_called >= 3:
             if vcf_rec.num_called == vcf_rec.num_het or vcf_rec.num_called == vcf_rec.num_hom_alt:
                 for s in vcf_rec.samples:
