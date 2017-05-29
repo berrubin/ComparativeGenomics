@@ -177,8 +177,8 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     seq_dic = attribute_list[3]
     target_species = attribute_list[4]
     if target_species == "LALB":
-#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_social_renamed.vcf.gz" % (target_species, target_species))
-        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_solitary_renamed.vcf.gz" % (target_species, target_species))
+        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_social_renamed.vcf.gz" % (target_species, target_species))
+#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_solitary_renamed.vcf.gz" % (target_species, target_species))
     else:
         vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (target_species, target_species))
 #    vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (target_species, target_species))
@@ -186,7 +186,7 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
     cur_gene.set_start(gene_deets["start"])
     cur_gene.set_end(gene_deets["end"])
-    cur_gene.set_sequence(seq_dic[gene_dic[gene_name][0]], 3000)
+    cur_gene.set_sequence(seq_dic[gene_dic[gene_name][0]], 5000)
     mrna_list = gff_file.getmRNA(gene_dic[gene_name][0], gene_name) #only one mRNA because working with longest iso
     for mrna_dic in mrna_list:
         cds_dic = gff_file.getCDS(gene_dic[gene_name][0], mrna_dic["Name"])
@@ -207,18 +207,18 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
             tuple_list.append((utr_dic["start"], utr_dic["end"]))
         cur_gene.add_utrs(tuple_list, "three")
     cur_gene.get_cds_sequence()
-    cur_gene.get_flank_sequence(3000)
+    cur_gene.get_flank_sequence(5000)
     cur_gene.get_utr_sequence()
     cur_gene.get_intron_sequence()
 #    if cur_gene.name == "LMAL_00737":
-    cur_gene.get_genotypes(vcf_reader, 3000)
+    cur_gene.get_genotypes(vcf_reader, 5000)
  #   print cur_gene.name
     return cur_gene
 
         
 def cds_sequence_worker(gene):
     gene.get_cds_sequence()
-    gene.get_flank_sequence(3000)
+    gene.get_flank_sequence(5000)
     gene.get_utr_sequence()
     gene.get_intron_sequence()
 #    print gene.name
@@ -230,7 +230,7 @@ def get_gene_coords(gff_file, gene_dic, gene_objects, seq_dic):
         gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
         gene_objects[gene_name].set_start(gene_deets["start"])
         gene_objects[gene_name].set_end(gene_deets["end"])
-        gene_objects[gene_name].set_sequence(seq_dic[gene_dic[gene_name][0]], 3000)
+        gene_objects[gene_name].set_sequence(seq_dic[gene_dic[gene_name][0]], 5000)
     return gene_objects
 
 def get_utr_dic(gff_file, gene_dic, prime_end, gene_objects):
@@ -284,7 +284,7 @@ def gene_vcf_dic(species, num_threads):
 #                print gene_name
 #                print gene_count
             gene_count += 1
-            gene_object.get_genotypes(reader, 3000)
+            gene_object.get_genotypes(reader, 5000)
         print "Dumping %s pickle" % species
 #        pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (species, species), 'wb'))
         pickle.dump(gene_dic, open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (species, species), 'wb'))
@@ -299,7 +299,7 @@ def check_og_complete(og_num, inspecies, outspecies, ortho_dic):
 
 def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads, align_dir):
     get_species_data(inspecies, num_threads)
-    sys.exit()
+#    sys.exit()
     get_species_data(outspecies, num_threads)
 #    in_gene_dic = gene_vcf_dic(inspecies, num_threads)
 #    out_gene_dic = gene_vcf_dic(outspecies, num_threads)
@@ -319,7 +319,7 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads, 
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
             og_list.append(og_num)
 #    og_list = [2110]
-#    og_list = [0]
+#    og_list = [870]
 #    og_list = og_list[0:50]
 #    pool = multiprocessing.Pool(processes = num_threads)
     work_list = []
@@ -499,6 +499,8 @@ def pairwise_direct_correction(line_list, outfile, fasterfile, slowerfile):
     p_list = []
     for line in line_list:
         p = float(line[-1])
+        if p < 0:
+            continue
         chi_list.append(line)
         p_list.append(p)
     pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_i')[1]
@@ -998,7 +1000,7 @@ def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene
     intuple, outtuple = conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, "%s/conservation_files" % out_path)
     if intuple[1] - intuple[0] < 500 or outtuple[1] - outtuple[0] < 500:
         return "no_alignment"
-    if abs(intuple[1] - intuple[0] - outtuple[1] - outtuple[0]) > 500:
+    if abs((intuple[1] - intuple[0]) - (outtuple[1] - outtuple[0])) > 500:
         return "no_alignment"
     if not os.path.exists("%s/mafft_files/" % out_path):
         os.mkdir("%s/mafft_files" % out_path)

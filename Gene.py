@@ -545,7 +545,7 @@ class Gene:
         while x < len(cur_cds):
             ambig_codon = False
             codon = cur_cds[x:x+3].upper()
-            print codon
+#            print codon
             for ambig in ["N", "M", "R", "W", "S", "Y", "K", "V", "H", "D", "B"]:
                 if ambig in codon:
                     ambig_codon = True
@@ -562,10 +562,10 @@ class Gene:
         self.potent_syn = syn_sites
         self.potent_nsyn = nsyn_sites
         self.potent_fourfold = potent_fourfold
-        print cur_cds
-        print "potential fourfold"
-        print potent_fourfold
-        print len(cur_cds)
+#        print cur_cds
+#        print "potential fourfold"
+#        print potent_fourfold
+#        print len(cur_cds)
             
     def add_site_to_samples(self, vcf_rec, sample_dic, index):
         if vcf_rec.num_called >= 3:
