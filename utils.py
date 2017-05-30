@@ -960,7 +960,10 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file):
         fore_list = SOLITARY
     if foreground == "model_d":
         tree_prep = False
-    reader = SeqIO.parse("%s/og_cds_%s.1.fas-gb" % ( indir, orthogroup), format = 'fasta')
+    if foreground == "ancestral":
+        reader = SeqIO.parse("%s/og_cds_%s.1.fas" % ( indir, orthogroup), format = 'fasta')
+    else:
+        reader = SeqIO.parse("%s/og_cds_%s.1.fas-gb" % ( indir, orthogroup), format = 'fasta')
     seq_dic = {}
     taxa_list = []
     for rec in reader:
@@ -1035,11 +1038,18 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
     og_file_list = []
     work_queue = multiprocessing.Queue()
     result_queue = multiprocessing.Queue()
+    
     for cur_og in og_list:
+
         if test_type == "model_d":
             prep_paml_files(cur_og, indir, outdir, "model_d", phylogeny_file)
         elif test_type == "free":
             prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file)
+        elif test_type == "ancestral":
+            cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
+            if not os.path.exists("%s/OG_%s" % (outdir, cur_og)):
+                os.mkdir("%s/OG_%s" % (outdir, cur_og))
+            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
         else:
             prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file)
         work_queue.put([cur_og, outdir])
@@ -1053,6 +1063,8 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
               worker = Worker(work_queue, result_queue, paml_tests.free_ratios_worker)          
         elif test_type == "model_d":
               worker = Worker(work_queue, result_queue, paml_tests.branch_site_d_worker)          
+        elif test_type == "ancestral":
+            worker = Worker(work_queue, result_queue, paml_tests.ancestor_reconstruction)          
         jobs.append(worker)
         worker.start()
     try:
@@ -1348,3 +1360,35 @@ def overlap(mytuple, tuplelist):
         tuplelist.append(mytuple)
     return tuplelist
    
+def read_ancestral_seq(infile):
+    reader = open(infile, 'rU')
+    tree_line = False
+    ancestral_seqs = False
+    node_index_dic = {}
+    node_seqs = {}
+    for line in reader:
+        if line.startswith("tree with node labels for Rod Page's TreeView"):
+            tree_line = True
+            continue
+        if tree_line:
+            tree_string = line.strip().replace(" ", "")
+            tree = PhyloTree(tree_string, format = 8)
+            for node in tree.traverse():
+                if not node.is_leaf():
+                    children = []
+                    for child in node.traverse():
+                        if child.is_leaf():
+                            children.append(child.name.split("_")[1])
+                    node_index_dic[node.name] = children
+            tree_line = False
+        if line.startswith("List of extant and reconstructed sequences"):
+            ancestral_seqs = True
+            continue
+        if ancestral_seqs:
+            if line.startswith("node #"):
+                node_name = line.split()[1][1:]
+                cur_seq = "".join(line.split()[2:])
+                node_seqs[node_name] = cur_seq
+        if line.startswith("Overall accuracy of the 13 ancestral sequences:"):
+            break
+    return node_index_dic, node_seqs
