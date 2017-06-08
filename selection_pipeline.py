@@ -28,10 +28,10 @@ def main():
         os.mkdir(options.base_dir)     #create working directory
 #    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
     ortho_dic = utils.ortho_reader(options.ortho_file)
-#    utils.mk_test("LMAL", "LLEU", ortho_dic, "%s/%s_prank" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
+    utils.mk_test("LALB", "LCAL", ortho_dic, "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
 #    utils.hka_test("LMAL", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))    
 #    utils.hka_test("LPAU", "LLEU", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))
-    utils.hka_test("LALB", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank_no_backbone" % (options.base_dir, options.prefix))
+#    utils.hka_test("LALB", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank_no_backbone" % (options.base_dir, options.prefix))
 #    utils.hka_test("LLEU", "LMAL", "flank", ortho_dic, options.base_dir, options.num_threads)
     """
     seq_dic = utils.get_cds() #get coding sequences from all species

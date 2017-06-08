@@ -1,3 +1,4 @@
+from Bio.Phylo.PAML import yn00
 from Bio import SeqIO
 from Bio.Phylo.PAML import codeml
 import subprocess
@@ -87,7 +88,14 @@ def free_ratios_worker(orthogroup, workingdir):
 
 def ancestor_reconstruction(orthogroup, workingdir):
     cml = codeml.Codeml(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), tree = "%s/og_%s.tree" % (workingdir, orthogroup), out_file = "%s/og_%s.anc" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
-    cml.set_options(runmode=0,fix_blength=0,seqtype=1,CodonFreq=2, model=0, icode=0, clock = 0, aaDist=0, Mgene = 0, fix_kappa = 0, kappa = 2, fix_omega = 0, omega = 1, getSE = 0, RateAncestor = 1, cleandata = 0, Small_Diff = .45e-6, verbose = True)
+    cml.set_options(runmode=0,fix_blength=0,seqtype=1,CodonFreq=2, model=0, icode=0, clock = 0, aaDist=0, Mgene = 0, fix_kappa = 0, kappa = 2, fix_omega = 0, omega = 1, getSE = 0, RateAncestor = 1, cleandata = 0, Small_Diff = .45e-6, verbose = False)
     cml.set_options(NSsites=[0])
     cml.print_options()
-    cml.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/codeml", verbose = True)
+    cml.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/codeml", verbose = False)
+
+
+def pairwise_yn(orthogroup, workingdir):
+    yn = yn00.Yn00(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), out_file = "%s/og_%s.yn" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
+    yn.set_options(icode = 0, verbose = 0, weighting = 0, commonf3x4 = 0)
+    yn_results = yn.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/yn00", verbose = False)
+    return yn_results

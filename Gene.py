@@ -125,8 +125,8 @@ class Gene:
         for coord_tuple in tuple_list:
             if coord_tuple == base_index:
                 continue
-            intron_length += coord_tuple[0] - prev_coord[1]
-            adjustment = intron_length + base_index[0] 
+            intron_length += coord_tuple[0] - prev_coord[1] -1
+            adjustment = intron_length + base_index[0]
             new_tuple = (coord_tuple[0] - adjustment, coord_tuple[1] - adjustment)
             new_tuple_dic[coord_tuple] = new_tuple
             base_index = (tuple_list[0][0], coord_tuple[1])
@@ -144,7 +144,7 @@ class Gene:
             if old_coord >= coord_tuple[0] and old_coord < coord_tuple[1]:
                 target_coords = coord_tuple
         new_tuple_dic = zeroed_tuples
-        shift = target_coords[0] - new_tuple_dic[target_coords][0]
+        shift = target_coords[0] - new_tuple_dic[target_coords][0] 
         new_coord = old_coord - shift
         if self.strand == 1:
             return new_coord

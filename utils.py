@@ -129,7 +129,7 @@ def get_species_data(target_species, num_threads):
     seq_list = []
     species_list = []
     for gene_name in gene_dic.keys():
-#        if gene_name == "LALB_04709": #""LMAL_00737" or gene_name == "LLEU_03402":
+#        if gene_name == "LCAL_00010": #""LMAL_00737" or gene_name == "LLEU_03402":
         work_list.append([gene_name, gene_dic, gff_file, seq_dic, target_species])
     gene_list = pool.map(harvest_worker, work_list)
     pool.close()
@@ -882,36 +882,124 @@ def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene
 
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path, num_threads):
     get_species_data(inspecies, num_threads)
+#    sys.exit()
     get_species_data(outspecies, num_threads)
     in_gene_dic = read_species_pickle(inspecies)
+    print "%s pickle read" % inspecies
     out_gene_dic = read_species_pickle(outspecies)
+    print "%s pickle read" % outspecies
     if not os.path.exists("%s/mk_tests/" % (out_path)):
         os.mkdir("%s/mk_tests/" % (out_path))
     mk_table = open("%s/mk_tests/%s_%s_mk_snipre.txt" % (out_path, inspecies, outspecies), 'w')
     mk_table.write("geneID\tPR\tFR\tPS\tFS\tTsil\tTrepl\tnout\tnpop\n")
+    
     for og_num in ortho_dic.keys():
+#        print "OG %s" % og_num
+#        if og_num != 7:
+#            continue
         if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
             continue
-        if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]):
+        if ortho_dic[og_num][inspecies][0].count(inspecies) > 1 or ortho_dic[og_num][outspecies][0].count(outspecies) > 1:
+            continue
+        if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]) == 1:
+
+            inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
+            outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
+            inseq, outseq = get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies)
+            if inseq.count("-") / (len(inseq) * 1.0) > 0.05 or outseq.count("-") / (len(outseq) * 1.0) > 0.05:
+                continue
+
 #            if og_num != 2110:
 #                continue
-            reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
+#            fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
+            in_gene = in_gene_dic[inspecies_gene]
+            out_gene = out_gene_dic[outspecies_gene]
 
-            for rec in reader:
-                if rec.id[0:4] == inspecies:
-                    inseq = str(rec.seq)
-                    inseq_name = rec.id[:-3]
-                elif rec.id[0:4] == outspecies:
-                    outseq = str(rec.seq)
-                    outseq_name = rec.id[:-3]
-            fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
-            in_poly_syn = in_gene_dic[inseq_name].syn_count
-            in_poly_nsyn = in_gene_dic[inseq_name].nsyn_count
-            in_potent_syn = in_gene_dic[inseq_name].potent_syn
-            in_potent_nsyn = in_gene_dic[inseq_name].potent_nsyn
-            in_n_size = in_gene_dic[inseq_name].average_n * 2
-            mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(in_n_size)]) + "\n")
+            fix_syn, fix_nsyn = fixed_sub_types(inspecies, outspecies, og_num, align_dir, in_gene, out_gene)
+            in_poly_syn = in_gene.syn_count #in_gene_dic[inseq_name].syn_count
+            in_poly_nsyn = in_gene.nsyn_count #in_gene_dic[inseq_name].nsyn_count
+            in_potent_syn = in_gene.potent_syn #in_gene_dic[inseq_name].potent_syn
+            in_potent_nsyn = in_gene.potent_nsyn #in_gene_dic[inseq_name].potent_nsyn
+            in_n_size = in_gene.average_n * 2 #in_gene_dic[inseq_name].average_n * 2
+            if inspecies == "LALB":
+                insample = in_n_size
+            else:
+                insample = in_n_size * 2
+#            if (fix_syn + fix_nsyn) / (in_potent_syn + in_poten_nsyn) > 0.05:
+#                continue
+
+            mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(insample)]) + "\n")
     mk_table.close()
+
+def fixed_sub_types(inspecies, outspecies, og_num, align_dir, in_gene, out_gene):
+    inseq, outseq = get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies)
+    in_gene_alt_dic = in_gene.coding_fixed_align(inseq)
+    out_gene_alt_dic = out_gene.coding_fixed_align(outseq)
+
+    nsyn_count = 0
+    syn_count = 0
+    same_codons = 0
+    x = 0
+    while x < len(inseq):
+        #ignore codons with more than one divergent site (Bin's thing)
+        diff_count = 0
+        missing_data = False
+        for cod_index in range(3):
+            if inseq[x+cod_index] in ["N", "-"] or outseq[x+cod_index] in ["N", "-"]:
+                x = x + 3
+                missing_data = True
+                break
+        if missing_data:
+            continue
+
+        incodon_list = []
+        outcodon_list = []
+        for cod_index in range(3):
+            incodon_list.append([inseq[x+cod_index].upper()])
+            outcodon_list.append([outseq[x+cod_index].upper()])
+            if x+cod_index in in_gene_alt_dic.keys():
+                incodon_list[cod_index].append(str(in_gene_alt_dic[x+cod_index]).upper())
+            if x+cod_index in out_gene_alt_dic.keys():
+                outcodon_list[cod_index].append(str(out_gene_alt_dic[x+cod_index]).upper())
+#        print incodon_list
+#        print x
+#        print outcodon_list
+        overlap = 0
+        overlap_incodon = list(inseq[x:x+3])
+        overlap_outcodon = list(outseq[x:x+3])
+        for cur_site in range(len(incodon_list)):
+            for nuc in incodon_list[cur_site]:
+                if nuc in outcodon_list[cur_site]:
+                    overlap_incodon[cur_site] = nuc
+                    overlap_outcodon[cur_site] = nuc
+                    #if there is overlap at a site then just got to next site
+                    #don't need to keep checking current site
+                    break
+        incodon = "".join(overlap_incodon)
+        outcodon = "".join(overlap_outcodon)
+#        print incodon
+#        print outcodon
+        if incodon == outcodon:
+            same_codons += 1
+        else:
+            num_diffs = 0
+            for cod_index in range(3):
+                if incodon[cod_index] != outcodon[cod_index]:
+                    num_diffs += 1
+            if num_diffs == 1:
+                inaa = str(Seq.Seq(incodon).translate())
+                outaa = str(Seq.Seq(outcodon).translate())
+                if inaa == outaa:
+                    syn_count += 1
+                else:
+                    nsyn_count += 1
+#        print syn_count
+#        print nsyn_count
+        x = x + 3
+#    print in_gene_alt_dic
+#    print out_gene_alt_dic
+
+    return syn_count, nsyn_count        
 
 
 def check_for_stop(seq):
@@ -1386,9 +1474,134 @@ def read_ancestral_seq(infile):
             continue
         if ancestral_seqs:
             if line.startswith("node #"):
+ #               print line
                 node_name = line.split()[1][1:]
                 cur_seq = "".join(line.split()[2:])
                 node_seqs[node_name] = cur_seq
-        if line.startswith("Overall accuracy of the 13 ancestral sequences:"):
+#                print node_name
+ #               print cur_seq
+        if line.startswith("Overall accuracy of the"):
             break
     return node_index_dic, node_seqs
+
+def compile_ancestrals(og_list, indir, aligndir, outdir):
+    
+    species_syn_dists = {}
+    species_nsyn_dists = {}
+    species_fourf_dists = {}
+    for og_num in og_list:
+        print og_num
+        node_index_dic, node_seqs = read_ancestral_seq("%s/og_%s_working/rst" % (indir, og_num))
+        inseq_dic = {}
+        reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (aligndir, og_num), format = 'fasta')
+        for rec in reader:
+            inseq_dic[rec.id[0:-5]] = str(rec.seq)
+        if len(inseq_dic) < 4:
+            continue
+        nearest_anc = get_nearest_anc(node_index_dic, inseq_dic)
+        
+#        print inseq_dic.keys()
+#        print node_seqs
+        for species, seq in inseq_dic.items():
+            syn_pos, nsyn_pos, fourf_pos = sub_positions(seq, node_seqs[nearest_anc[species]])
+#            syn_pos, nsyn_pos, fourf_pos = sub_positions(seq, inseq_dic["ECOL"])
+            if species not in species_syn_dists.keys():
+                species_syn_dists[species] = []
+                species_nsyn_dists[species] = []
+                species_fourf_dists[species] = []
+                
+            syn_dists = calc_distances(syn_pos)
+#            print "syn dists"
+#            print syn_pos
+#            print syn_dists
+            nsyn_dists = calc_distances(nsyn_pos)
+            fourf_dists = calc_distances(fourf_pos)
+#            print "nsyn dists"
+#            print nsyn_pos
+#            print nsyn_dists
+            species_syn_dists[species] += syn_dists
+            species_nsyn_dists[species] += nsyn_dists
+            species_fourf_dists[species] += fourf_dists
+#            print species_syn_dists
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    for species in species_syn_dists.keys():
+        outfile = open("%s/%s_nsyn_distances.txt" % (outdir, species), 'w')
+        for distance in species_nsyn_dists[species]:
+            outfile.write(str(distance) + "\n")
+        outfile.close()
+        outfile = open("%s/%s_syn_distances.txt" % (outdir, species), 'w')
+        for distance in species_syn_dists[species]:
+            outfile.write(str(distance) + "\n")
+        outfile.close()
+        outfile = open("%s/%s_fourf_distances.txt" % (outdir, species), 'w')
+        for distance in species_fourf_dists[species]:
+            outfile.write(str(distance) + "\n")
+        outfile.close()
+
+
+#    print species_nsyn_dists["SAL1"]
+#    print species_syn_dists["SAL1"]
+#    print len(species_syn_dists["SAL1"])
+ #   print len(species_nsyn_dists["SAL1"])
+    
+
+def calc_distances(pos_list):
+    dist_list = []
+    x = 0
+    used_pos = []
+    for position in pos_list:
+        
+        for other_pos in pos_list:
+
+#            print pos_list
+            if position == other_pos or other_pos in used_pos:
+                continue
+            dist_list.append(abs(position - other_pos))
+        used_pos.append(position)
+    return dist_list
+
+def sub_positions(inseq, ancestor):
+    fourfold_list = changes.fourfold_codons()
+    empty_chars = ["N", "-", "X"]
+    insyns = []
+    innsyns = []
+    fourf = []
+    x = 0
+#    print inseq
+#    print ancestor
+    while x < len(inseq):
+        incodon = inseq[x:x+3]
+        anccodon = ancestor[x:x+3]
+        if incodon == anccodon or "N" in incodon or "-" in incodon:
+            x = x + 3
+            continue
+        inp = str(Seq.Seq(incodon.replace("-", "N")).translate())
+        ancp = str(Seq.Seq(anccodon.replace("-", "N")).translate())
+        if incodon[0] != anccodon[0]:
+            change_index = x
+        elif incodon[1] != anccodon[1]:
+            change_index = x + 1
+        elif incodon[2] != anccodon[2]:
+            change_index = x + 2
+        if inp == ancp:
+            insyns.append(change_index)
+        else:
+            innsyns.append(change_index)
+        if incodon in fourfold_list and anccodon in fourfold_list:
+            fourf.append(change_index)
+        x = x + 3
+    return insyns, innsyns, fourf
+
+def get_nearest_anc(index_dic, inseq_dic):
+    nearest_anc = {}
+    for inname in inseq_dic.keys():
+        fewest_children = len(inseq_dic)
+        smallest_node = -1
+        for index, children in index_dic.items():
+            if inname in children:
+                if len(children) <= fewest_children:
+                    fewest_children = len(children)
+                    smallest_node = index
+        nearest_anc[inname] = smallest_node
+    return nearest_anc
