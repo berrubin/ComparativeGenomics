@@ -1,3 +1,4 @@
+import paml_tests
 import os
 import sys
 import changes
@@ -493,7 +494,7 @@ def hka_worker(attribute_list):
         inseq = inseq[0:len(outseq)]
     if len(inseq) < len(outseq):
         outseq = outseq[0:len(inseq)]
-    pairwise_data = mafft_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num, in_gene, out_gene, out_path)
+    pairwise_data = mafft_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num, in_gene, out_gene, out_path, seq_type)
     if pairwise_data == "no_alignment":
         return "OG_%s\ttoo_different\n" % (og_num)
     average_diff = pairwise_data[0]
@@ -502,7 +503,7 @@ def hka_worker(attribute_list):
     outpoly = pairwise_data[3]
     inlen = pairwise_data[4]
     outlen = pairwise_data[5]
-    if align_len < 500:
+    if align_len < 500 or inlen < 500:
         return "OG_%s\ttoo_different\n" % (og_num)
     if 1.0 * average_diff / align_len > 0.10:
         return "OG_%s\ttoo_different\t%s\n" % (og_num, 1.0 * average_diff / align_len)
@@ -512,12 +513,15 @@ def hka_worker(attribute_list):
         return "OG_%s\tinsufficient_sampling\t" % og_num
     #this is the line for Jody Hey's HKA
 #    return "OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, 1.0, len(inseq), len(outseq), align_len, insample*2, outsample*2, inpoly, outpoly, average_diff)
-    directfile = open("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w')
+    if not os.path.exists("%s/hka_tests/hkadirect_pairwise_%s_%s" % (out_path, inspecies, outspecies)):
+        os.mkdir("%s/hka_tests/hkadirect_pairwise_%s_%s" % (out_path, inspecies, outspecies))
+        os.mkdir("%s/hka_tests/hey_%s_%s" % (out_path, inspecies, outspecies))
+    directfile = open("%s/hka_tests/hkadirect_pairwise_%s_%s/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type), 'w')
     directfile.write("Title: ingroup: %s, outgroup: %s\n" % (inspecies, outspecies))
     directfile.write("nloci 2\n")# % (len(hkadirect_lines)))
     directfile.write("IDlocus\tnsam\tSegSites\tDivergence\tlength_pol\tlength_div\tfactor_chrn\n")
 
-    outfile = open("%s/hka_tests/OG_%s_%s_%s_%s_hka.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w')
+    outfile = open("%s/hka_tests/hey_%s_%s/OG_%s_%s_%s_%s_hka.txt" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type), 'w')
     neighbor_stats_list = [] 
     direct_stats_list = []
     for neighbor_og, neighbor in neighbor_dic.items():
@@ -526,6 +530,8 @@ def hka_worker(attribute_list):
         if "insufficient_sampling" not in neighbor_stats:
             neighbor_stats_list.append(neighbor_stats[1])
             direct_stats_list.append(neighbor_stats[0])
+    if len(direct_stats_list) < 2:
+        return "OG_%s\tinsufficient_sampling\t" % og_num
     direct_background = sum_fourf_list(direct_stats_list)
     if inspecies == "LALB":
         insample = insample
@@ -541,20 +547,20 @@ def hka_worker(attribute_list):
         outfile.write(neighbor)
     outfile.close()
     switch_dir = os.getcwd()
-    os.chdir("%s/hka_tests" % out_path)
-    cmd = ["/Genomics/kocherlab/berubin/local/src/HKA/hka", "-DOG_%s_%s_%s_%s_hka.txt" % (og_num, inspecies, outspecies, seq_type), "-R%s/hka_tests/OG_%s_%s_%s_%s_hka_results" % (out_path, og_num, inspecies, outspecies, seq_type), "-S100"]
+    os.chdir("%s/hka_tests/hey_%s_%s" % (out_path, inspecies, outspecies))
+    cmd = ["/Genomics/kocherlab/berubin/local/src/HKA/hka", "-DOG_%s_%s_%s_%s_hka.txt" % (og_num, inspecies, outspecies, seq_type), "-R%s/hka_tests/hey_%s_%s/OG_%s_%s_%s_%s_hka_results" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type), "-S100"]
     FNULL = open(os.devnull, 'w')
     subprocess.call(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
     os.chdir(switch_dir)
-    p_val, obs_poly, exp_poly = parse_hka_result(inspecies, outspecies, seq_type, "%s/hka_tests/OG_%s_%s_%s_%s_hka_results.hka" % (out_path, og_num, inspecies, outspecies, seq_type))
+    p_val, obs_poly, exp_poly = parse_hka_result(inspecies, outspecies, seq_type, "%s/hka_tests/hey_%s_%s/OG_%s_%s_%s_%s_hka_results.hka" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type))
     directfile.write("OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample, inpoly, average_diff, inlen, align_len, 1))
     directfile.write(direct_background)
     directfile.close()
-    cmd = ["/Genomics/kocherlab/berubin/local/src/HKAdirect/bin/HKAdirect", "%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, og_num, inspecies, outspecies, seq_type)]
-    with open("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, og_num, inspecies, outspecies, seq_type), 'w') as outfile:
+    cmd = ["/Genomics/kocherlab/berubin/local/src/HKAdirect/bin/HKAdirect", "%s/hka_tests/hkadirect_pairwise_%s_%s/OG_%s_%s_%s_%s_hka_direct_pairwise.txt" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type)]
+    with open("%s/hka_tests/hkadirect_pairwise_%s_%s/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile)
     outfile.close()
-    directp = get_direct_p("%s/hka_tests/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, og_num, inspecies, outspecies, seq_type))
+    directp = get_direct_p("%s/hka_tests/hkadirect_pairwise_%s_%s/OG_%s_%s_%s_%s_hka_direct_pairwise_results.txt" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies, seq_type))
     if p_val == "HKA_failed":
         return "HKA_failed","OG_%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og_num, insample, inpoly, average_diff, inlen, align_len, 1), directp
     #the first string here is the result from this individual run of Hey's HKA
@@ -674,8 +680,12 @@ def parse_hka_result(inspecies, outspecies, seq_type, hkafile):
         if "SUM OF DEVIATIONS:" in line:
             chi_val = float(line.strip().split(" ")[-1])
         if line.startswith("Degrees of Freedom"):
-            dof = int(line.strip().split(" ")[3])
-            break
+            if "Degrees of Freedom:  " in line:
+                dof = int(line.strip().split(" ")[4])
+                break
+            else:
+                dof = int(line.strip().split(" ")[3])
+                break
     if chi_val == -1:
         return "HKA_failed", "NA", "NA"
     p_val = chisqprob(chi_val, dof)
@@ -822,45 +832,56 @@ def muscle_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num):
             counter += 1
     return counter, len(align_dic["inseq"]) - indel_count
 
-def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene, out_gene, out_path):
+def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene, out_gene, out_path, seq_type):
     #Align two sequences using mafft and return the number of 
     #differences between them. Since the number of polymorphisms
     #counted in these regions is dependent on where the alignable
     #regions are, this also provides the number of polymorphisms
-    if not os.path.exists("%s/conservation_files/" % out_path):
-        os.mkdir("%s/conservation_files" % out_path)
-    intuple, outtuple = conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, "%s/conservation_files" % out_path)
+    if not os.path.exists("%s/conservation_files" % (out_path)):
+        os.mkdir("%s/conservation_files" % (out_path))
+
+    if not os.path.exists("%s/conservation_files/%s_%s/" % (out_path, inspecies, outspecies)):
+        os.mkdir("%s/conservation_files/%s_%s" % (out_path, inspecies, outspecies))
+    intuple, outtuple = conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, "%s/conservation_files/%s_%s" % (out_path, inspecies, outspecies))
     if intuple[1] - intuple[0] < 500 or outtuple[1] - outtuple[0] < 500:
         return "no_alignment"
     if abs((intuple[1] - intuple[0]) - (outtuple[1] - outtuple[0])) > 500:
         return "no_alignment"
-    if not os.path.exists("%s/mafft_files/" % out_path):
-        os.mkdir("%s/mafft_files" % out_path)
-    seqfile = open("%s/mafft_files/OG_%s_%s_%s.fa" % (out_path, og_num, inspecies, outspecies), 'w')
+    if not os.path.exists("%s/mafft_files" % (out_path)):
+        os.mkdir("%s/mafft_files" % (out_path))
+
+    if not os.path.exists("%s/mafft_files/%s_%s" % (out_path, inspecies, outspecies)):
+        os.mkdir("%s/mafft_files/%s_%s" % (out_path, inspecies, outspecies))
+    seqfile = open("%s/mafft_files/%s_%s/OG_%s_%s_%s.fa" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies), 'w')
     seqfile.write(">inseq\n%s\n" % (seq1[intuple[0]:intuple[1]]))
     seqfile.write(">outseq\n%s\n" % (seq2[outtuple[0]:outtuple[1]]))
 
     seqfile.close()
     FNULL = open(os.devnull, 'w')
-    with open("%s/mafft_files/OG_%s_%s_%s.afa" % (out_path, og_num, inspecies, outspecies), 'w') as outfile:
-        subprocess.call(["linsi", "%s/mafft_files/OG_%s_%s_%s.fa" % (out_path, og_num, inspecies, outspecies)], stdout = outfile, stderr=FNULL)
+    with open("%s/mafft_files/%s_%s/OG_%s_%s_%s.afa" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies), 'w') as outfile:
+        subprocess.call(["linsi", "%s/mafft_files/%s_%s/OG_%s_%s_%s.fa" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies)], stdout = outfile, stderr=FNULL)
 
     outfile.close()
     align_dic = {}
-    reader = SeqIO.parse("%s/mafft_files/OG_%s_%s_%s.afa" % (out_path, og_num, inspecies, outspecies), format = 'fasta')
+    reader = SeqIO.parse("%s/mafft_files/%s_%s/OG_%s_%s_%s.afa" % (out_path, inspecies, outspecies, og_num, inspecies, outspecies), format = 'fasta')
     for rec in reader:
         align_dic[rec.id] = str(rec.seq)
     average_diff = 0
     missing_data = ["N", "-", "n"]
     indel_count = 0
-    if in_gene.strand == -1:
-        in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.end, "inseq")
-    else:
-        in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_end - intuple[1], "inseq")
-    if out_gene.strand == -1:
-        out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_end - outtuple[1], "outseq")
-    else:
-        out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_start + outtuple[0], "outseq")
+    if seq_type == "flank":
+        if in_gene.strand == -1:
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.end, "inseq")
+        else:
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_end - intuple[1], "inseq")
+        if out_gene.strand == -1:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_end - outtuple[1], "outseq")
+        else:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_start + outtuple[0], "outseq")
+    elif seq_type == "intron":
+        in_gene_alt_dic = in_gene.coding_fixed_align(align_dic["inseq"])
+        out_gene_alt_dic = out_gene.coding_fixed_align(align_dic["outseq"])
+
     for x in range(len(align_dic["inseq"])):
         if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
             indel_count += 1
@@ -920,14 +941,15 @@ def mk_test(inspecies, outspecies, ortho_dic, align_dir, out_path, num_threads):
             in_poly_nsyn = in_gene.nsyn_count #in_gene_dic[inseq_name].nsyn_count
             in_potent_syn = in_gene.potent_syn #in_gene_dic[inseq_name].potent_syn
             in_potent_nsyn = in_gene.potent_nsyn #in_gene_dic[inseq_name].potent_nsyn
-            in_n_size = in_gene.average_n * 2 #in_gene_dic[inseq_name].average_n * 2
+            in_n_size = in_gene.average_n #in_gene_dic[inseq_name].average_n * 2
             if inspecies == "LALB":
                 insample = in_n_size
             else:
                 insample = in_n_size * 2
 #            if (fix_syn + fix_nsyn) / (in_potent_syn + in_poten_nsyn) > 0.05:
 #                continue
-
+            if insample == 0:
+                continue
             mk_table.write("\t".join([str(og_num), str(in_poly_nsyn), str(fix_nsyn), str(in_poly_syn), str(fix_syn), str(in_potent_syn), str(in_potent_nsyn), "1", str(insample)]) + "\n")
     mk_table.close()
 
@@ -1269,7 +1291,7 @@ def prank_align(og_list, indir, outdir, use_backbone, phylogeny_file, num_thread
 def get_cds():
     #get dictionary containing CDS for all genomes
     seq_dic = {}
-    for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR"]:
+    for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB"]:
         reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (species, species), format = 'fasta')
         seq_dic[species] = {}
         for rec in reader:
@@ -1325,6 +1347,7 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
 def concatenate_for_raxml(input_dir, outfile):
     #take directory of alignments and concatenate them all into a
     #RAxML formatted fasta file
+    SPECIES_LIST = ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB", "LALB", "Nmel", "Dnov"]
     full_dic = {}
     for species in SPECIES_LIST:
         full_dic[species] = []

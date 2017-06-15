@@ -95,6 +95,7 @@ def ancestor_reconstruction(orthogroup, workingdir):
 
 
 def pairwise_yn(orthogroup, workingdir):
+    print workingdir
     yn = yn00.Yn00(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), out_file = "%s/og_%s.yn" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
     yn.set_options(icode = 0, verbose = 0, weighting = 0, commonf3x4 = 0)
     yn_results = yn.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/yn00", verbose = False)

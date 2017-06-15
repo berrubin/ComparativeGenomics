@@ -28,24 +28,24 @@ def main():
         os.mkdir(options.base_dir)     #create working directory
 #    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
     ortho_dic = utils.ortho_reader(options.ortho_file)
-    utils.mk_test("LALB", "LCAL", ortho_dic, "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
-#    utils.hka_test("LMAL", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))    
+#    utils.mk_test("LALB", "LCAL", ortho_dic, "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
+#    utils.hka_test("LZEP", "LVIE", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))    
 #    utils.hka_test("LPAU", "LLEU", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))
 #    utils.hka_test("LALB", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank_no_backbone" % (options.base_dir, options.prefix))
 #    utils.hka_test("LLEU", "LMAL", "flank", ortho_dic, options.base_dir, options.num_threads)
-    """
+    
     seq_dic = utils.get_cds() #get coding sequences from all species
     #store name of orthology index file
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
     #write fastas for ALL orthologous groups
-    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
+#    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
     paras_allowed = False #do not include OG's with paralogs
     #get a list of the first 100 genes with min_taxa (should always be all
     #of the available species) for making the phylogeny
-    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)#[0:100]
+    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)[0:100]
     use_backbone = False #do not use a phylogeny to align these first 100 genes
     #align first 100 genes
-    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone, "nophylogeny", options.num_threads)
+#    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone, "nophylogeny", options.num_threads)
     #concatenate the aligned 100 genes
 #    utils.concatenate_for_raxml("%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix))
 
@@ -55,9 +55,14 @@ def main():
     
     og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
     og_list = utils.limit_list(og_list, options.min_og_group, options.max_og_group)
+
     use_backbone = True #use phylogeny to align these genes
     #align non-paralogous genes
-    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
+#    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
+    test_type = "ancestral"
+    foreground = "dummy"
+    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    """
     paras_allowed = True #allow paralogs
     #get list of all OG's including those with paralogs
     og_list_with_paras = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
@@ -67,6 +72,7 @@ def main():
     use_backbone = False # turn backbone phylogeny off
     #align all OG's with paralogs -- can't use backbone phylogeny for this
     utils.prank_align(para_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank" % (options.base_dir, options.prefix), use_backbone, options.tree_file, options.num_threads)
+    paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), phylogeny_file, options.num_threads)
     foreground = "social"
     test_type = "model_d"
     test_type = "bs"
