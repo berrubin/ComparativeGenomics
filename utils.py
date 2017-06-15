@@ -1064,10 +1064,12 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file):
     #formats fasta and tree files for PAML analysis
     tree_prep = True
     fore_list = []
+    SOCIAL = ["HLIG","LMAL", "LMAR", "LPAU", "LZEP", "AAUR", "LCAL", "LALB", "LZEP", "HRUB"]
+    REV_SOLITARY = ["APUR", "LLEU", "LOEN", "LVIE", "LFIG"]
     if foreground == "social":
         fore_list = SOCIAL
     if foreground == "solitary":
-        fore_list = SOLITARY
+        fore_list = REV_SOLITARY
     if foreground == "model_d":
         tree_prep = False
     if foreground == "ancestral":
@@ -1157,9 +1159,10 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
             prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file)
         elif test_type == "ancestral":
             cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
-            if not os.path.exists("%s/OG_%s" % (outdir, cur_og)):
-                os.mkdir("%s/OG_%s" % (outdir, cur_og))
-            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
+#            if not os.path.exists("%s/OG_%s" % (outdir, cur_og)):
+#                os.mkdir("%s/OG_%s" % (outdir, cur_og))
+#            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
+            prep_paml_files(cur_og, indir, outdir, "ancestral", phylogeny_file)
         else:
             prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file)
         work_queue.put([cur_og, outdir])
