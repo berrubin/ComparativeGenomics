@@ -3,6 +3,7 @@ import os
 import paml_tests
 import utils
 from optparse import OptionParser
+import sys
 
 parser = OptionParser()
 
@@ -14,6 +15,9 @@ parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Out
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int)
 parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho", help = "File of orthologous groups.")
 parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree", help = "Phylogeny of species examined.")
+parser.add_option("-a", "--action", dest = "action", type = str, help = "Analysis to do", default = "paml")
+parser.add_option("-i", "--inspecies", dest = "inspecies", type = str, help = "Species of interest in pairwise analyses")
+parser.add_option("-u", "--outspecies", dest = "outspecies", type = str, help = "Outgroup species in pairwise analyses")
 (options, args) = parser.parse_args()
 
 STOP_CODONS = ["TAA", "TAG", "TGA"]
@@ -28,13 +32,17 @@ def main():
         os.mkdir(options.base_dir)     #create working directory
 #    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
     ortho_dic = utils.ortho_reader(options.ortho_file)
-#    utils.mk_test("LALB", "LCAL", ortho_dic, "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), options.base_dir, options.num_threads)
-#    utils.hka_test("LZEP", "LVIE", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))    
-#    utils.hka_test("LPAU", "LLEU", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))
-#    utils.hka_test("LALB", "LCAL", "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank_no_backbone" % (options.base_dir, options.prefix))
-#    utils.hka_test("LLEU", "LMAL", "flank", ortho_dic, options.base_dir, options.num_threads)
-    
-    seq_dic = utils.get_cds() #get coding sequences from all species
+    if options.action == "mk":
+        utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
+        sys.exit()
+    if options.action == "hka":
+        utils.hka_test(options.inspecies, options.outspecies, "flank", ortho_dic, options.base_dir, options.num_threads,"%s/%s_prank" % (options.base_dir, options.prefix))    
+        sys.exit()
+    if options.action == "godatabase":
+        ipr_taxa_list = ["AAUR", "APUR", "AVIR", "HLIG", "HRUB", "LCAL", "LFIG", "LLEU", "LMAL"]
+        utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s" % (options.base_dir, options.prefix))
+        sys.exit()
+#    seq_dic = utils.get_cds() #get coding sequences from all species
     #store name of orthology index file
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
     #write fastas for ALL orthologous groups
@@ -54,6 +62,7 @@ def main():
     #get list of all genes without paralogs
     
     og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+
     og_list = utils.limit_list(og_list, options.min_og_group, options.max_og_group)
 
     use_backbone = True #use phylogeny to align these genes
@@ -62,10 +71,117 @@ def main():
     test_type = "ancestral"
     foreground = "dummy"
 #    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    """
+    test_type = "mk"
+    for species in ["AAUR", "APUR", "HLIG", "LCAL", "LFIG", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP"]:
+        foreground = species
+#        utils.og_list_termfinder("%s/mk_tests/%s_pos.lst" % (options.base_dir, foreground), "%s/mk_tests/%s_tested.lst" % (options.base_dir, foreground), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/mk_tests/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    utils.og_list_termfinder("%s/mk_tests/og_list_soc.txt" % (options.base_dir), "%s/mk_tests/og_soc_sol_tested.lst" % (options.base_dir), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/mk_tests/%s_soc_%s_go" % (options.base_dir, options.prefix, test_type))
+    utils.og_list_termfinder("%s/mk_tests/og_list_sol.txt" % (options.base_dir), "%s/mk_tests/og_soc_sol_tested.lst" % (options.base_dir), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/mk_tests/%s_sol_%s_go" % (options.base_dir, options.prefix, test_type))
+    
+    test_type = "branch"
+    foreground = "solitary"
+    solitary_taxa = ["LLEU", "LFIG", "LVIE", "LOEN"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, solitary_taxa, og_list, 2)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s.lrt" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    
+    test_type = "bs"
+    foreground = "solitary"
+    solitary_taxa = ["LLEU", "LFIG", "LVIE", "LOEN"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, solitary_taxa, og_list, 2)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#    utils.test_lrt("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s.lrt" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
     test_type = "branch"
     foreground = "social"
-    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s.lrt" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    test_type = "bs"
+    foreground = "social"
+#    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#    utils.test_lrt("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s.lrt" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
     """
+
+    """
+    test_type = "branch"
+    foreground = "terminals"
+    target_taxa = ["LLEU", "LFIG", "LVIE", "LOEN", "APUR", "AAUR", "LMAR", "LZEP", "LMAL", "LPAU", "HLIG"]
+    solitary_taxa = ["LLEU", "LFIG", "LVIE", "LOEN", "APUR"]
+    social_taxa = ["AAUR", "LMAR", "LZEP", "LMAL", "LPAU", "HLIG"]
+    pairs_list = [("AAUR", "APUR"), ("LMAR", "LFIG"), ("LZEP", "LVIE"), ("LPAU", "LOEN")]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, solitary_taxa, og_list, 3)
+    cur_og_list = utils.min_taxa_membership(ortho_dic, social_taxa, cur_og_list, 4)
+    for foreground in target_taxa:
+        utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#        utils.test_lrt_branch("%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), "%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_terminals/%s_%s_%s_go" % (options.base_dir, options.prefix,options.prefix, foreground, test_type))
+#    utils.terminal_test_overlap("%s/%s_terminals/" % (options.base_dir, options.prefix, options.prefix), test_type, target_taxa, social_taxa, solitary_taxa, pairs_list)
+
+
+    test_type = "bs"
+    foreground = "terminals"
+    target_taxa = ["LLEU", "LFIG", "LVIE", "LOEN", "APUR", "AAUR", "LMAR", "LZEP", "LMAL", "LPAU", "HLIG"]
+    solitary_taxa = ["LLEU", "LFIG", "LVIE", "LOEN", "APUR"]
+    social_taxa = ["AAUR", "LMAR", "LZEP", "LMAL", "LPAU", "HLIG"]
+    pairs_list = [("AAUR", "APUR"), ("LMAR", "LFIG"), ("LZEP", "LVIE"), ("LPAU", "LOEN")]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, solitary_taxa, og_list, 3)
+    cur_og_list = utils.min_taxa_membership(ortho_dic, social_taxa, cur_og_list, 4)
+    for foreground in target_taxa:
+        utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#        utils.test_lrt_branch("%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), "%s/%s_terminals/%s_%s_%s" % (options.base_dir, options.prefix, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_terminals/%s_%s_%s_go" % (options.base_dir, options.prefix,options.prefix, foreground, test_type))
+#    utils.terminal_test_overlap("%s/%s_terminals/" % (options.base_dir, options.prefix, options.prefix), test_type, target_taxa, social_taxa, solitary_taxa, pairs_list)
+    """
+    """
+    test_type = "bs"
+    foreground = "lasihali"
+#    target_taxa = ["AVIR"]
+#    og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+
+    outgroup_taxa = ["Dnov", "Nmel", "AAUR", "APUR", "AVIR"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, outgroup_taxa, og_list, 2)
+    outgroup_taxa = ["Dnov", "Nmel", "AVIR"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, outgroup_taxa, cur_og_list, 1)
+    print len(cur_og_list)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    
+    test_type = "bs"
+    foreground = "augochlorine"
+    target_taxa = ["APUR", "AAUR"]
+    cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+    outgroup_taxa = ["Dnov", "Nmel"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, outgroup_taxa, cur_og_list, 1)
+    print "Number OGs: %s" % len(og_list)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    
+    test_type = "bs"
+    foreground = "halictus"
+    target_taxa = ["HLIG", "HRUB"]
+    cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+    outgroup_taxa = ["Dnov", "Nmel", "AAUR", "APUR"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, outgroup_taxa, cur_og_list, 2)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+
+    test_type = "bs"
+    foreground = "lasioglossum"
+#    target_taxa = ["AVIR"]
+#    og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+    outgroup_taxa = ["Dnov", "Nmel", "AAUR", "APUR", "AVIR"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, outgroup_taxa, og_list, 2)
+    ingroup_taxa = ["LLEU", "LFIG", "LMAR", "LVIE", "LZEP", "LCAL", "LALB", "LMAL", "LOEN", "LPAU"]
+    cur_og_list = utils.min_taxa_membership(ortho_dic, ingroup_taxa, cur_og_list, 5)
+#    utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.test_lrt_branch("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    """
+    
+    test_type = "free"
+    foreground = "free"
+#    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+    utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type))
+    
+    """
+    
     paras_allowed = True #allow paralogs
     #get list of all OG's including those with paralogs
     og_list_with_paras = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)

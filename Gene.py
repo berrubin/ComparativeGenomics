@@ -178,7 +178,7 @@ class Gene:
         #but this can be adjusted to whatever
         print self.name
         neighbor_dic = {}
-        closest_neighbors = []
+        closest_neighbors = [self.name]
         for gene in gene_list:
             if gene.scaf != self.scaf:
                 continue
