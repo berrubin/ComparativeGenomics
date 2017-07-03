@@ -1245,14 +1245,17 @@ def terminal_test_overlap(indir, prefix, test_type, target_taxa, soc_list, sol_l
                 continue
             cur_line = line.strip().split()
             cur_og = cur_line[0]
-            cur_p = float(cur_linep[1])
+            cur_p = float(cur_line[1])
             sig_dic[taxon][cur_og] = cur_p
             if cur_p < 0.05:
                 og_list.append(cur_og)
     og_list = list(set(og_list))
-    outfile = open("%s/%s_%s_soc_sol_counts.txt" % (indir, prefix, test_type))
+    outfile = open("%s/%s_%s_soc_sol_counts.txt" % (indir, prefix, test_type), 'w')
     outfile.write("OG\tsocs\tsols\tsoc_pairs\tsol_pairs\t%s\n" % "\t".join(target_taxa))
+
     for og in og_list:
+#        if og != "3499":
+#            continue
         soc_count = 0
         sol_count = 0
         soc_pairs_count = 0
@@ -1265,20 +1268,25 @@ def terminal_test_overlap(indir, prefix, test_type, target_taxa, soc_list, sol_l
             if og in sig_dic[sol].keys():
                 if sig_dic[sol][og] < 0.05:
                     sol_count += 1
-        for pair in pairs:
-            if og in sig_dic[pair[0]].keys() and og not in sig_dic[pair[1]].keys():
+
+        for pair in pairs_list:
+#            print og
+#            print pair
+#            print sig_dic[pair[0]][og]
+
+            if og in sig_dic[pair[0]].keys() and og in sig_dic[pair[1]].keys():
                 if sig_dic[pair[0]][og] < 0.05 and sig_dic[pair[1]][og] > 0.05:
                     soc_pairs_count += 1
-            elif og in sig_dic[pair[1]].keys() and og not in sig_dic[pair[0]].keys():           
-                if sig_dic[pair[1]][og] < 0.05 and sig_dic[pair[0]][og] > 0.05:
+#            if og in sig_dic[pair[1]].keys() and og in sig_dic[pair[0]].keys():           
+                elif sig_dic[pair[1]][og] < 0.05 and sig_dic[pair[0]][og] > 0.05:
                     sol_pairs_count += 1
         out_ps = []
         for taxon in target_taxa:
             if og in sig_dic[taxon].keys():
-                out_ps.append(round(sig_dic[taxon][og], 5))
+                out_ps.append(str(round(sig_dic[taxon][og], 5)))
             else:
                 out_ps.append("NA")
-        outfile.write("%s\t%s\t%s\t%s\t%s\n" % (og, soc_count, sol_count, soc_pairs_count, sol_pairs_count, "\t".join(out_ps)))
+        outfile.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (og, soc_count, sol_count, soc_pairs_count, sol_pairs_count, "\t".join(out_ps)))
     outfile.close()
         
     
@@ -1391,7 +1399,7 @@ def lrt(alt_file, null_file):
 def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
     #reads free ratios files and gets dn/ds ratios
     #can be easily extended to get dn and ds but those are low quality
-    soc_sol_pairs = {"LMAR":"LFIG", "AAUR":"APUR", "LZEP":"LVIE", "LPAU":"LOEN"}
+    soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
 
@@ -1974,17 +1982,22 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
     species_syn_dists = {}
     species_nsyn_dists = {}
     species_fourf_dists = {}
+    species_syn_vars = {}
+    species_nsyn_vars = {}
+    species_fourf_vars = {}
+
     for og_num in og_list:
         print og_num
         node_index_dic, node_seqs = read_ancestral_seq("%s/og_%s_working/rst" % (indir, og_num))
         inseq_dic = {}
         reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (aligndir, og_num), format = 'fasta')
         for rec in reader:
-            inseq_dic[rec.id[0:-5]] = str(rec.seq)
+#            inseq_dic[rec.id[0:-5]] = str(rec.seq)
+            inseq_dic[rec.id[0:4]] = str(rec.seq)
         if len(inseq_dic) < 4:
             continue
         nearest_anc = get_nearest_anc(node_index_dic, inseq_dic)
-        
+
 #        print inseq_dic.keys()
 #        print node_seqs
         for species, seq in inseq_dic.items():
@@ -1994,6 +2007,9 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
                 species_syn_dists[species] = []
                 species_nsyn_dists[species] = []
                 species_fourf_dists[species] = []
+                species_syn_vars[species] = []
+                species_nsyn_vars[species] = []
+                species_fourf_vars[species] = []
                 
             syn_dists = calc_distances(syn_pos)
 #            print "syn dists"
@@ -2007,6 +2023,12 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
             species_syn_dists[species] += syn_dists
             species_nsyn_dists[species] += nsyn_dists
             species_fourf_dists[species] += fourf_dists
+            if len(syn_dists) > 5:
+                species_syn_vars[species].append(numpy.var(syn_dists))
+            if len(nsyn_dists) > 5:
+                species_nsyn_vars[species].append(numpy.var(nsyn_dists))
+            if len(fourf_dists) > 5:
+                species_fourf_vars[species].append(numpy.var(fourf_dists))
 #            print species_syn_dists
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -2022,6 +2044,18 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
         outfile = open("%s/%s_fourf_distances.txt" % (outdir, species), 'w')
         for distance in species_fourf_dists[species]:
             outfile.write(str(distance) + "\n")
+        outfile.close()
+        outfile = open("%s/%s_nsyn_vars.txt" % (outdir, species), 'w')
+        for var in species_nsyn_vars[species]:
+            outfile.write(str(var) + "\n")
+        outfile.close()
+        outfile = open("%s/%s_syn_vars.txt" % (outdir, species), 'w')
+        for var in species_syn_vars[species]:
+            outfile.write(str(var) + "\n")
+        outfile.close()
+        outfile = open("%s/%s_fourf_vars.txt" % (outdir, species), 'w')
+        for var in species_fourf_vars[species]:
+            outfile.write(str(var) + "\n")
         outfile.close()
 
 
@@ -2053,8 +2087,8 @@ def sub_positions(inseq, ancestor):
     innsyns = []
     fourf = []
     x = 0
-#    print inseq
-#    print ancestor
+#    print len(inseq)
+#    print len(ancestor)
     while x < len(inseq):
         incodon = inseq[x:x+3]
         anccodon = ancestor[x:x+3]
