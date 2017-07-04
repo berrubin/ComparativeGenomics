@@ -1652,6 +1652,16 @@ def get_cds():
         seq_dic[species][rec.id] = str(rec.seq)
     return seq_dic
 
+def get_cds(base_dir):
+    seq_dic = {}
+    for seqfile in glob("%s/*.fna" % (base_dir)):
+        reader = SeqIO.parse(seqfile, format = 'fasta')
+        cur_species = seqfile.split(".")[0].split("/")[-1]
+        seq_dic[cur_species] = {}
+        for rec in reader:
+            seq_dic[cur_species][rec.id] = str(rec.seq)
+    return seq_dic
+
 def get_prot_seqs():
     #get dictionary containing protein sequences for all genomes
     seq_dic = {}
@@ -1730,6 +1740,39 @@ def concatenate_for_raxml(input_dir, outfile):
     for species, seq_list in full_dic.items():
         writer.write("%s\n%s\n" % (species, "".join(seq_list)))
     writer.close()
+
+def gene_trees(og_list, aligndir, outdir, num_threads):
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    work_list = []
+    for og in og_list:
+        work_list.append([og, aligndir, outdir])
+    pool = multiprocessing.Pool(processes = num_threads)
+    pool.map(gene_tree_worker, work_list)
+    pool.close()
+    pool.join()
+
+
+def gene_tree_worker(param_list):
+    og = param_list[0]
+    aligndir = param_list[1]
+    outdir = param_list[2]
+    seq_dic = {}
+    reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (aligndir, og), format = 'fasta')
+    for rec in reader:
+        seq_dic[rec.id] = str(rec.seq)
+        seqlen = len(str(rec.seq))
+    outfile = open("%s/og_cds_%s.afa" % (outdir, og), 'w')
+    outfile.write("%s %s\n" % (len(seq_dic.keys()), seqlen))
+    for k, v in seq_dic.items():
+        outfile.write("%s\n%s\n" % (k[0:4], v))
+    outfile.close()
+    switch_dir = os.getcwd()
+    os.chdir(outdir)
+    cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og)]
+    subprocess.call(cmd)
+    os.chdir(switch_dir)
+
 
 def read_ortho_index(index_file, min_taxa, paras_allowed):
     #get list of all of the OG's with the minumum taxa

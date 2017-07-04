@@ -43,17 +43,18 @@ def main():
         utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s" % (options.base_dir, options.prefix))
         sys.exit()
 #    seq_dic = utils.get_cds() #get coding sequences from all species
+    seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/sodalis/snodgrassella/renamed_cds_seqs")
     #store name of orthology index file
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
     #write fastas for ALL orthologous groups
-#    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
+    utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
     paras_allowed = False #do not include OG's with paralogs
     #get a list of the first 100 genes with min_taxa (should always be all
     #of the available species) for making the phylogeny
-    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)[0:100]
+    og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)#[0:100]
     use_backbone = False #do not use a phylogeny to align these first 100 genes
     #align first 100 genes
-#    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone, "nophylogeny", options.num_threads)
+    utils.prank_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), use_backbone, "nophylogeny", options.num_threads)
     #concatenate the aligned 100 genes
 #    utils.concatenate_for_raxml("%s/%s_prank_no_backbone" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix))
 
@@ -71,7 +72,10 @@ def main():
     test_type = "ancestral"
     foreground = "dummy"
 #    utils.paml_test(og_list, foreground, test_type,"%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
-    utils.compile_ancestrals(og_list, "%s/%s_%s" % (options.base_dir, options.prefix, test_type), "%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s" % (options.base_dir, options.prefix, "substitution_distances_free"))
+#    utils.gene_trees(og_list, "%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_gene_trees" % (options.base_dir, options.prefix), options.num_threads)
+    target_taxa = ["ECOL", "SFLE", "SPRA", "SPIE"]
+    cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+#    utils.compile_ancestrals(cur_og_list, "%s/%s_%s" % (options.base_dir, options.prefix, test_type), "%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s" % (options.base_dir, options.prefix, "substitution_distances_free"))
 
 #    og_list = utils.external_list("%s/%s_free_free_results/sol_larger.txt" % (options.base_dir, options.prefix))
 #    utils.compile_ancestrals(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_prank" % (options.base_dir, options.prefix), "%s/%s_%s" % (options.base_dir, options.prefix, "substitution_distances_free_sol"))
