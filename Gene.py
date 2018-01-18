@@ -27,11 +27,13 @@ class Gene:
         self.potent_fourfold = -1
         self.average_n = -1 #npop
         self.intron_dic = {}
+        self.first_intron_dic = {}
         self.utr3_dic = {}
         self.utr5_dic = {}
         self.flank_dic = {}
         self.flank_subs = -1 
         self.intron_subs = -1
+        self.first_intron_subs = -1
         self.utr3_subs = -1
         self.utr5_subs =-1
         self.called_counts = {}
@@ -40,6 +42,7 @@ class Gene:
         self.average_n = 0
         self.flank_seq = ""
         self.intron_seq = ""
+        self.first_intron_seq = ""
         self.neighbors = []
         self.syn_coords = []
         self.nsyn_coords = []
@@ -242,6 +245,20 @@ class Gene:
         self.intron_dic = intron_dic
         self.intron_seq = "".join(intron_dic.values())
 
+    def get_first_intron_sequence(self):
+        intron_dic = collections.OrderedDict()
+        for site, nuc in self.sequence.items():
+            if len(self.introns) > 0:
+                if self.strand == 1:
+                    intron = self.introns[0]
+                else:
+                    intron = self.introns[-1]
+                if site >= intron[0] and site <= intron[1]:
+                    intron_dic[site] = nuc
+        self.first_intron_dic = intron_dic
+        self.first_intron_seq = "".join(intron_dic.values())
+
+
     def get_utr_sequence(self):
         utr_dic = collections.OrderedDict()
         for site, nuc in self.sequence.items():
@@ -288,6 +305,7 @@ class Gene:
     def noncoding_subs(self):
         flank_subs = 0
         intron_subs = 0
+        first_intron_subs = 0
         utr3_subs = 0
         utr5_subs = 0
         for index in self.alts.keys():
@@ -306,6 +324,12 @@ class Gene:
                         break
                     if str(self.alts[index])[x] != str(self.refs[index])[x]:
                         intron_subs += 1
+            if index in self.first_intron_dic.keys():
+                for x in range(len(self.alts[index])):
+                    if x > len(self.refs[index]) - 1:
+                        break
+                    if str(self.alts[index])[x] != str(self.refs[index])[x]:
+                        first_intron_subs += 1            
             if index in self.utr3_dic.keys():                
                 for x in range(len(self.alts[index])):
                     if x > len(self.refs[index]) - 1:
@@ -320,6 +344,7 @@ class Gene:
                         utr5_subs += 1
         self.flank_subs = flank_subs
         self.intron_subs = intron_subs
+        self.first_intron_subs = first_intron_subs
         self.utr3_subs = utr3_subs
         self.utr5_subs = utr5_subs
 
@@ -435,7 +460,6 @@ class Gene:
 
     def get_genotypes(self, vcf_reader, flank_size):
         #read in polymorphism data from VCF file
-        scaf_len = vcf_reader.contigs[self.scaf][1]
         called_site_count = 0
         alt_dic = {}
         called_count = {}
@@ -449,6 +473,7 @@ class Gene:
             self.called_counts = {}
             self.potential_sites()
             return
+        scaf_len = vcf_reader.contigs[self.scaf][1]
             
         for rec in reader: 
             if rec.num_called < 4:

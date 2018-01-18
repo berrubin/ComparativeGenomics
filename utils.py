@@ -9,7 +9,7 @@ import multiprocessing
 from multiprocessing import Pool
 from potpour import Worker
 import copy
-import vcf
+#import vcf
 from Bio import SeqIO
 from Bio import Seq
 from Gene import Gene
@@ -29,6 +29,8 @@ from Bio.SeqRecord import SeqRecord
 from Bio import AlignIO
 from StringIO import StringIO
 import datetime
+import scipy.stats
+
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
@@ -103,6 +105,8 @@ def get_species_data(target_species, num_threads):
     seq_dic = {}
     if target_species == "LALB":
         reader = SeqIO.parse("%s/%s/%s_v3/%s/%s_genome_v3.0.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+    elif target_species in ["BIMP", "PMIB"]:
+        reader = SeqIO.parse("%s/%s/%s_genome_v2.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
     else:
         reader = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
     for rec in reader:
@@ -139,6 +143,7 @@ def get_species_data(target_species, num_threads):
     for gene_name in gene_dic.keys():
 #        if gene_name == "LCAL_00010": #""LMAL_00737" or gene_name == "LLEU_03402":
         work_list.append([gene_name, gene_dic, gff_file, seq_dic, target_species])
+#        harvest_worker([gene_name, gene_dic, gff_file, seq_dic, target_species])
     gene_list = pool.map(harvest_worker, work_list)
     pool.close()
     pool.join()
@@ -156,6 +161,7 @@ def get_species_data(target_species, num_threads):
     pickle.dump(gene_objects, pickle_file)
     pickle_file.close()
     gene_objects = {}
+    sys.exit()
 
 def make_neighborhoods(attribute_list):
     gene = attribute_list[0]
@@ -173,11 +179,13 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     seq_dic = attribute_list[3]
     target_species = attribute_list[4]
     if target_species == "LALB":
-        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_social_renamed.vcf.gz" % (target_species, target_species))
-#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_solitary_renamed.vcf.gz" % (target_species, target_species))
+#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_social_renamed.vcf.gz" % (target_species, target_species))
+        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_solitary_renamed.vcf.gz" % (target_species, target_species))
+    elif target_species in ["BIMP", "PMIB"]:
+        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/bombus.bmel.vcf.gz" % (target_species))
     else:
         vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_filtered_miss.vcf.gz" % (target_species, target_species))
-#    vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (target_species, target_species))
+#        vcf_reader = vcf.Reader(filename = "/scratch/tmp/berubin/resequencing/%s/genotyping/%s_testset.vcf.gz" % (target_species, target_species))
     cur_gene = Gene(gene_name, gene_dic[gene_name][0], gene_dic[gene_name][1])
     gene_deets = gff_file.getGene(gene_dic[gene_name][0], gene_name)[0]
     cur_gene.set_start(gene_deets["start"])
@@ -206,6 +214,7 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     cur_gene.get_flank_sequence(5000)
     cur_gene.get_utr_sequence()
     cur_gene.get_intron_sequence()
+    cur_gene.get_first_intron_sequence()
     cur_gene.get_genotypes(vcf_reader, 5000)
     return cur_gene
 
@@ -300,9 +309,13 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads, 
     print "%s pickle read" % outspecies
     og_map_dic = make_og_gene_map(ortho_dic)
     not_enough_neighbors = 0
+#    og_list = [9860]
     for og in og_list:
         inspecies_gene = ortho_dic[og][inspecies][0][:-3]
         outspecies_gene = ortho_dic[og][outspecies][0][:-3]
+        ##THIS IS JUST FOR TESTSET
+#        if inspecies_gene not in in_gene_dic.keys() or outspecies_gene not in out_gene_dic.keys():
+#            continue
         in_gene = in_gene_dic[inspecies_gene]
         out_gene = out_gene_dic[outspecies_gene]
         neighbor_dic = {}
@@ -317,6 +330,9 @@ def hka_test(inspecies, outspecies, seq_type, ortho_dic, out_path, num_threads, 
                 continue
             if check_og_complete(neighbor_og, inspecies, outspecies, ortho_dic):
                 outneighbor_name = ortho_dic[neighbor_og][outspecies][0][:-3]
+                ###THIS IS ALSO JUST FOR TESTSET
+#                if neighbor_name not in in_gene_dic.keys() or outneighbor_name not in out_gene_dic.keys():
+#                    continue
                 neighbor_dic[neighbor_og] = (in_gene_dic[neighbor_name], out_gene_dic[outneighbor_name])
         if len(neighbor_dic) < 4:
             not_enough_neighbors += 1
@@ -540,17 +556,17 @@ def hka_worker(attribute_list):
     if not os.path.exists("%s/og_cds_%s.1.fas" % (align_dir, og_num)):
         return "OG_%s\tinsufficient_sampling\t" % og_num
     inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene, out_gene, seq_type)
-    if len(inseq) < 100 or len(outseq) < 100:
+    if len(inseq) < 50 or len(outseq) < 50:
         return "OG_%s\ttoo_short\n" % (og_num)
     if in_gene.strand == -1:
         inseq = str(Seq.Seq(inseq).reverse_complement())
     if out_gene.strand == -1:
         outseq = str(Seq.Seq(outseq).reverse_complement())
-    if len(outseq) < len(inseq):
-        inseq = inseq[0:len(outseq)]
-    if len(inseq) < len(outseq):
-        outseq = outseq[0:len(inseq)]
-    pairwise_data = mafft_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num, in_gene, out_gene, out_path, seq_type)
+#    if len(outseq) < len(inseq):
+#        inseq = inseq[0:len(outseq)]
+#    if len(inseq) < len(outseq):
+#        outseq = outseq[0:len(inseq)]
+    pairwise_data = fsa_pairwise_diff_count(inseq, outseq, inspecies, outspecies, og_num, in_gene, out_gene, out_path, seq_type)
     if pairwise_data == "no_alignment_1":
         return "OG_%s\tno_alignment_1\n" % (og_num)
     if pairwise_data == "no_alignment_2":
@@ -566,11 +582,12 @@ def hka_worker(attribute_list):
     outpoly = pairwise_data[3]
     inlen = pairwise_data[4]
     outlen = pairwise_data[5]
-    if align_len < 500 or inlen < 500:
+#    if align_len < 500 or inlen < 500:
+    if align_len < 50 or inlen < 50:
         return "OG_%s\ttoo_different_1\n" % (og_num)
     if 1.0 * average_diff / align_len > 0.10:
         return "OG_%s\ttoo_different_2\t%s\n" % (og_num, 1.0 * average_diff / align_len)
-    if 1.0 * align_len / inlen < 0.90:
+    if 1.0 * align_len / inlen < 0.40:
         return "OG_%s\ttoo_different_3\t%s\n" % (og_num, 1.0 * align_len / inlen)
     if insample < 5:# or outsample < 5:
         return "OG_%s\tinsufficient_sampling\t" % og_num
@@ -769,6 +786,19 @@ def get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies):
             outseq_name = rec.id[:-3]
     return inseq, outseq
 
+def get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies):
+    #get the aligned sequences for two species in a particular OG
+    reader = SeqIO.parse("%s/og_cds_%s.afa" % (align_dir, og_num), format = 'fasta')
+    for rec in reader:
+        if rec.id[0:4] == inspecies:
+            inseq = str(rec.seq)
+            inseq_name = rec.id[:-3]
+        elif rec.id[0:4] == outspecies:
+            outseq = str(rec.seq)
+            outseq_name = rec.id[:-3]
+    return inseq, outseq
+
+
 def get_prank_aligned_dic(align_dir, og_num):
     #get the aligned sequences for two species in a particular OG
     reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (align_dir, og_num), format = 'fasta')
@@ -858,6 +888,13 @@ def gather_hka_data(inspecies_gene, outspecies_gene, seq_type):
         outpoly = outspecies_gene.intron_subs
         inseq = inspecies_gene.intron_seq
         outseq = outspecies_gene.intron_seq
+        insample = inspecies_gene.average_n
+        outsample = outspecies_gene.average_n
+    elif seq_type == "first_intron":
+        inpoly = inspecies_gene.first_intron_subs
+        outpoly = outspecies_gene.first_intron_subs
+        inseq = inspecies_gene.first_intron_seq
+        outseq = outspecies_gene.first_intron_seq
         insample = inspecies_gene.average_n
         outsample = outspecies_gene.average_n
     elif seq_type == "three_prime_utr":
@@ -961,6 +998,106 @@ def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene
     elif seq_type == "intron":
         in_gene_alt_dic = in_gene.coding_fixed_align(align_dic["inseq"])
         out_gene_alt_dic = out_gene.coding_fixed_align(align_dic["outseq"])
+    
+    for x in range(len(align_dic["inseq"])):
+        if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
+            indel_count += 1
+            continue
+        insite_list = [align_dic["inseq"][x].lower()]
+
+        outsite_list = [align_dic["outseq"][x].lower()]
+        if x in in_gene_alt_dic.keys():
+            insite_list.append(str(in_gene_alt_dic[x]).lower())
+        if x in out_gene_alt_dic.keys():
+            outsite_list.append(str(out_gene_alt_dic[x]).lower())
+        overlap = False
+        for nuc in insite_list:
+            if nuc in outsite_list:
+                overlap = True
+        if not overlap:
+            average_diff += 1
+    return average_diff, len(align_dic["inseq"]) - indel_count, len(in_gene_alt_dic), len(out_gene_alt_dic), intuple[1] - intuple[0], outtuple[1] - outtuple[0]
+
+def fsa_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene, out_gene, out_path, seq_type):
+    #Align two sequences using mafft and return the number of 
+    #differences between them. Since the number of polymorphisms
+    #counted in these regions is dependent on where the alignable
+    #regions are, this also provides the number of polymorphisms
+    if not os.path.exists("%s/conservation_files_%s" % (out_path, seq_type)):
+        os.mkdir("%s/conservation_files_%s" % (out_path, seq_type))
+
+    if not os.path.exists("%s/conservation_files_%s/%s_%s/" % (out_path, seq_type, inspecies, outspecies)):
+        os.mkdir("%s/conservation_files_%s/%s_%s" % (out_path, seq_type, inspecies, outspecies))
+    intuple, outtuple = conserved_noncoding(seq1, seq2, og_num, inspecies, outspecies, "%s/conservation_files_%s/%s_%s" % (out_path, seq_type, inspecies, outspecies))
+    if intuple[0] == 0 and intuple[1] == 0 and outtuple[1] ==0 and outtuple[0] == 0:
+        return "no_alignment_3"
+
+    if intuple[0] == -1 and intuple[1] == -1 and outtuple[1] == -1 and outtuple[0] == -1:
+        return "no_alignment_4"
+    if (intuple[1] - intuple[0]) < 50 or (outtuple[1] - outtuple[0]) < 50:
+#        print "too different alignment: %s" % og_num
+        return "no_alignment_1"
+#    if abs((intuple[1] - intuple[0]) - (outtuple[1] - outtuple[0])) > 500:
+#        return "no_alignment_2"
+    if not os.path.exists("%s/fsa_files_%s" % (out_path, seq_type)):
+        os.mkdir("%s/fsa_files_%s" % (out_path, seq_type))
+
+    if not os.path.exists("%s/fsa_files_%s/%s_%s" % (out_path, seq_type, inspecies, outspecies)):
+        os.mkdir("%s/fsa_files_%s/%s_%s" % (out_path, seq_type, inspecies, outspecies))
+    seqfile = open("%s/fsa_files_%s/%s_%s/OG_%s_%s_%s.fa" % (out_path, seq_type, inspecies, outspecies, og_num, inspecies, outspecies), 'w')
+#    seqfile.write(">inseq\n%s\n" % (seq1[intuple[0]:intuple[1]]))
+#    seqfile.write(">outseq\n%s\n" % (seq2[outtuple[0]:outtuple[1]]))
+    seqfile.write(">inseq\n%s\n" % (seq1))
+    seqfile.write(">outseq\n%s\n" % (seq2))
+    intuple = (1, len(seq1))
+    outtuple = (1, len(seq2))
+
+    seqfile.close()
+    cmd = ["/Genomics/kocherlab/berubin/local/src/fsa-1.15.9/bin/fsa", "%s/fsa_files_%s/%s_%s/OG_%s_%s_%s.fa" % (out_path, seq_type, inspecies, outspecies, og_num, inspecies, outspecies)]
+    FNULL = open(os.devnull, 'w')
+    with open("%s/fsa_files_%s/%s_%s/OG_%s_%s_%s.afa" % (out_path, seq_type, inspecies, outspecies, og_num, inspecies, outspecies), 'w') as outfile:
+        subprocess.call(cmd, stdout = outfile, stderr = FNULL)
+    outfile.close()
+    align_dic = {}
+    reader = SeqIO.parse("%s/fsa_files_%s/%s_%s/OG_%s_%s_%s.afa" % (out_path, seq_type, inspecies, outspecies, og_num, inspecies, outspecies), format = 'fasta')
+    for rec in reader:
+        align_dic[rec.id] = str(rec.seq)
+    average_diff = 0
+    missing_data = ["N", "-", "n"]
+    indel_count = 0
+
+    if seq_type == "flank":
+        if in_gene.strand == -1:
+############GGGGGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHHHHHHHHHH
+#            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.end, "inseq")
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_end - intuple[1], "inseq")
+        else:
+#            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_end - intuple[1], "inseq")
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.flank_start + intuple[0], "inseq")
+        if out_gene.strand == -1:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_end - outtuple[1], "outseq")
+        else:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.flank_start + outtuple[0], "outseq")
+
+    elif seq_type == "intron":
+        in_gene_alt_dic = in_gene.coding_fixed_align(align_dic["inseq"])
+        out_gene_alt_dic = out_gene.coding_fixed_align(align_dic["outseq"])
+    elif seq_type == "first_intron":
+        if in_gene.strand == -1:
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.cds_coords[-1][0] - intuple[1], "inseq")
+        else:
+            in_gene_alt_dic = in_gene.check_polymorphisms_fixed(align_dic, in_gene.cds_coords[0][1] + intuple[0], "inseq")
+        if out_gene.strand == -1:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.cds_coords[-1][0] - outtuple[1], "outseq")
+        else:
+            out_gene_alt_dic = out_gene.check_polymorphisms_fixed(align_dic, out_gene.cds_coords[0][1] + outtuple[0], "outseq")
+        print in_gene.name
+        for k in sorted(in_gene_alt_dic.keys()):
+            print "%s:%s" % (k, in_gene_alt_dic[k])
+        print in_gene.name
+        for k in sorted(out_gene_alt_dic.keys()):
+            print "%s:%s" % (k, out_gene_alt_dic[k])
+
 
     for x in range(len(align_dic["inseq"])):
         if align_dic["inseq"][x] in missing_data or align_dic["outseq"][x] in missing_data:
@@ -980,6 +1117,7 @@ def mafft_pairwise_diff_count(seq1, seq2, inspecies, outspecies, og_num, in_gene
         if not overlap:
             average_diff += 1
     return average_diff, len(align_dic["inseq"]) - indel_count, len(in_gene_alt_dic), len(out_gene_alt_dic), intuple[1] - intuple[0], outtuple[1] - outtuple[0]
+
 
 def includes_paralogs(og_dic):
     for k, v in og_dic.items():
@@ -1033,7 +1171,7 @@ def mk_test(inspecies, outspecies, ortho_dic, align_dir, anc_dir, out_path, num_
         if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]) == 1:
             inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
             outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
-            inseq, outseq = get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies)
+            inseq, outseq = get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies)
 
             ######Turn this on to do ancestral
 #            node_index_dic, node_seqs = read_ancestral_seq("%s/og_%s_working/rst" % (anc_dir, og_num))
@@ -1190,7 +1328,7 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file):
     fore_list = []
     SOCIAL = ["HLIG","LMAL", "LMAR", "LPAU", "AAUR", "LZEP"]
     REV_SOLITARY = ["LLEU", "LOEN", "LVIE", "LFIG", "APUR"]
-    if foreground in ["HLIG","LMAL", "LMAR", "LPAU", "AAUR", "LZEP", "LLEU", "LOEN", "LVIE", "LFIG", "APUR"]:
+    if foreground in ["HLIG","LMAL", "LMAR", "LPAU", "AAUR", "LZEP", "LLEU", "LOEN", "LVIE", "LFIG", "APUR", "FNIG", "BNIG"]:
         fore_list = [foreground]
         terminals = True
     if foreground == "social":
@@ -1199,39 +1337,65 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file):
         fore_list = REV_SOLITARY
     elif foreground == "model_d":
         tree_prep = False
-    elif foreground == "lasioglossum" or foreground == "augochlorine" or foreground == "halictus" or foreground == "lasihali":
+    elif foreground == "lasioglossum" or foreground == "augochlorine" or foreground == "halictus" or foreground == "lasihali" or foreground == "lasiaugo":
         tree_prep = False
-    elif foreground == "ancestral":
-        reader = SeqIO.parse("%s/og_cds_%s.1.fas" % ( indir, orthogroup), format = 'fasta')
+    elif "clade" in foreground:
+        tree_prep = False
+    if foreground == "ancestral":
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % ( indir, orthogroup), format = 'fasta')
+    elif foreground == "yn":
+        reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % ( indir, orthogroup), format = 'fasta')
+        tree_prep = False
+    elif foreground == "aaml_blengths":
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % ( indir, orthogroup), format = 'fasta')
+#        reader = SeqIO.parse("%s/og_cds_%s.1.fas-gb" % ( indir, orthogroup), format = 'fasta')
     else:
-        reader = SeqIO.parse("%s/og_cds_%s.1.fas-gb" % ( indir, orthogroup), format = 'fasta')
+        reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % ( indir, orthogroup), format = 'fasta')
     seq_dic = {}
     taxa_list = []
     for rec in reader:
-        seq_dic[rec.id] = str(rec.seq)
+        seq_dic[rec.id] = str(rec.seq).upper()
         taxa_list.append(rec.id[0:4])
     if terminals:
         if foreground not in taxa_list:
             return False
     outfile = open("%s/og_cds_%s.afa" % (outdir, orthogroup), 'w')
-    outfile.write("%s %s\n" % (len(seq_dic), len(rec.seq)))
+    if foreground == "aaml_blengths":
+        outfile.write("%s %s\n" % (len(seq_dic), len(rec.seq) / 3))
+    else:
+        outfile.write("%s %s\n" % (len(seq_dic), len(rec.seq)))
     for species, sequence in seq_dic.items():
-        outfile.write("%s\n%s\n" % (species[0:4], sequence))
+        if foreground == "aaml_blengths":
+            outfile.write("%s\n%s\n" % (species[0:4], str(Seq.Seq(sequence.replace("-", "N")).translate())))
+        elif foreground == "free":
+            if str(Seq.Seq(sequence.replace("-", "N")).translate()).count("*") > 0:
+                outfile.close()
+                return False
+            else:
+                outfile.write("%s\n%s\n" % (species[0:4], sequence))
+        else:
+            outfile.write("%s\n%s\n" % (species[0:4], sequence))
     outfile.close()
     if tree_prep:
         trim_phylo(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
-    elif foreground == "lasihali":
-        lasihali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
-    elif foreground == "augochlorine":
-        augo_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
-    elif foreground == "halictus":
-        hali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
-    elif foreground == "lasioglossum":
-        lasi_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
+    elif "lasihali" in foreground:
+        lasihali_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file)
+    elif "augochlorine" in foreground:
+        augo_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file)
+    elif "halictus" in foreground:
+        hali_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file)
+    elif "lasioglossum" in foreground:
+        lasi_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file)
+    elif "lasiaugo" in foreground:
+        lasiaugo_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file)
 
 #        shutil.copy("/Genomics/kocherlab/berubin/annotation/orthology/halictids_rough/lasioglossum.tree", "%s/og_%s.tree" % (outdir, orthogroup))
-    else:
+    elif foreground != "yn":
         shutil.copy("/Genomics/kocherlab/berubin/annotation/orthology/model_d.tree", "%s/og_%s.tree" % (outdir, orthogroup))
+    for seq1 in seq_dic.values():
+        for seq2 in seq_dic.values():
+            if align_len(seq1,seq2) < 100:
+                return False
     return True
 
 def terminal_test_overlap(indir, prefix, test_type, target_taxa, soc_list, sol_list, pairs_list):
@@ -1396,7 +1560,63 @@ def lrt(alt_file, null_file):
     p = chisqprob(2*(alt_likely - nul_likely), 1)
     return p
 
-def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
+def compile_gene_trees(og_list, indir, ref_tree, outdir):
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    og_bl_dic = {}
+    ref_tr = PhyloTree(ref_tree)
+    bad_count = 0
+    for og in og_list:
+        print og
+        if not os.path.exists("%s/RAxML_bestTree.og_%s.tree" % (indir, og)):
+            continue
+        tree = PhyloTree("%s/RAxML_bestTree.og_%s.tree" % (indir, og))
+#        tree.set_outgroup("AMEL")
+        cur_bl_dic = {}
+        cur_leaves = []
+        for leaf in tree:
+            if leaf.name == "BTER":
+                continue
+            cur_leaves.append(leaf.name)
+        tree.prune(cur_leaves, preserve_branch_length = True)
+        for leaf in tree:
+            cur_bl_dic[leaf.name] = leaf.dist
+#        tree.prune(cur_bl_dic.keys(), preserve_branch_length = True)
+        time_tree = PhyloTree(ref_tree)
+        time_tree.prune(cur_bl_dic.keys(), preserve_branch_length = True)
+        time_dic = standardize_to_time(cur_bl_dic, time_tree)
+#        time_dic = cur_bl_dic
+
+
+        if tree.robinson_foulds(ref_tr)[0] > 0:
+            print og
+            print tree
+            print tree.robinson_foulds(ref_tr)
+            bad_count += 1
+            continue
+        for leaf in tree:
+            if leaf.name == "BTER":
+                continue
+            if leaf.name not in og_bl_dic.keys():
+                
+                og_bl_dic[leaf.name] = []
+            og_bl_dic[leaf.name].append(time_dic[leaf.name])
+#            og_bl_dic[leaf.name].append(leaf.dist)
+    outfile = open("%s/bls.txt" % (outdir), 'w')
+    for species in og_bl_dic.keys():
+        outfile.write("%s\t%s\t%s\n" % (species, numpy.median(og_bl_dic[species]), numpy.std(og_bl_dic[species])))
+    print bad_count
+    outfile.close()
+
+def standardize_to_time(target_dic, ref_tree):
+    standard_dic = {}
+    for k, v in target_dic.items():
+        if k in ["Dnov", "Nmel"]:
+            continue
+        standard_dic[k] = v / ref_tree.get_leaves_by_name(k)[0].dist
+    return standard_dic
+
+def read_frees(indir, outdir, database_file, ortho_dic, go_dir, get_dn_ds, time_tree, og_list):
     #reads free ratios files and gets dn/ds ratios
     #can be easily extended to get dn and ds but those are low quality
     soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}
@@ -1404,11 +1624,19 @@ def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
         os.mkdir(outdir)
 
     og_dnds_dic = {}
+    og_ds_dic = {}
+    og_dn_dic = {}
     species_list = []
     for og_file in glob("%s/og_*.alt" % (indir)):        
         cur_og = int(og_file.split("og_")[1].split(".alt")[0])
+        if cur_og not in og_list:
+            continue
         reader = open(og_file, 'rU')
         dnds_tree = False
+        ds_tree = False
+        dn_tree = False
+        ds_dic = {}
+        dn_dic = {}
         dnds_dic = {}
         first_line = True
         for line in reader:
@@ -1418,17 +1646,57 @@ def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
             if dnds_tree:
                 dnds = PhyloTree(line.strip().replace("#", ":"))
                 for leaf in dnds:
-                    if leaf.dist < 20:
-                        dnds_dic[leaf.name] = leaf.dist
+                    if leaf.dist < 4 and leaf.dist > 0.0001:
+                        if ds_dic[leaf.name] > 0.001:
+                            dnds_dic[leaf.name] = leaf.dist
                     if leaf.name not in species_list:
                         species_list.append(leaf.name)
                 dnds_tree = False
+            if ds_tree:
+                ds = PhyloTree(line.strip())
+                for leaf in ds:
+                    ds_dic[leaf.name] = leaf.dist
+                ds_tree = False
+            if dn_tree:
+                dn = PhyloTree(line.strip())
+                for leaf in dn:
+                    dn_dic[leaf.name] = leaf.dist
+                dn_tree = False
+            if line.strip() == "dS tree:":
+                ds_tree = True
+                continue
+            if line.strip() == "dN tree:":
+                dn_tree = True
+                continue
             if line.strip() == "w ratios as labels for TreeView:":
                 dnds_tree = True
                 continue
         if seq_len < 300:
             continue
         og_dnds_dic[cur_og] = dnds_dic
+        if get_dn_ds:
+            taxa_pres = dn_dic.keys()
+            if len(taxa_pres) == 0:
+                continue
+            if "Dnov" in taxa_pres:
+                taxa_pres.remove("Dnov")
+            if "Nmel" in taxa_pres:
+                taxa_pres.remove("Nmel")
+            tree = PhyloTree(time_tree)
+            tree.prune(taxa_pres, preserve_branch_length = True)
+            dn_time_dic = standardize_to_time(dn_dic, tree)
+            taxa_pres = ds_dic.keys()
+            if "Dnov" in taxa_pres:
+                taxa_pres.remove("Dnov")
+            if "Nmel" in taxa_pres:
+                taxa_pres.remove("Nmel")
+            tree = PhyloTree(time_tree)
+            tree.prune(taxa_pres, preserve_branch_length = True)
+            ds_time_dic = standardize_to_time(ds_dic, tree)
+            og_ds_dic[cur_og] = ds_time_dic
+            og_dn_dic[cur_og] = dn_time_dic
+#            og_ds_dic[cur_og] = ds_dic
+#            og_dn_dic[cur_og] = dn_dic
     sum_file = open("%s/dnds_summary.txt" % outdir, 'w')
     for species in species_list:
         outfile = open("%s/%s_free_dnds.txt" % (outdir, species), 'w')
@@ -1442,20 +1710,43 @@ def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
             
         outfile.close()
         sum_file.write("%s\t%s\t%s\n" % (species, numpy.mean(dnds_list), numpy.var(dnds_list)))
+    if get_dn_ds:
+        sum_file = open("%s/dn_ds_summary.txt" % outdir, 'w')
+        for species in species_list:
+            dn_list = []
+            ds_list = []
+            dnfile = open("%s/%s_free_dn.txt" % (outdir, species), 'w')
+            dsfile = open("%s/%s_free_ds.txt" % (outdir, species), 'w')
+            for og in og_dn_dic.keys():
+                if species in og_dn_dic[og].keys():
+                    dnfile.write("%s\t%s\n" % (og, og_dn_dic[og][species]))
+                    dn_list.append(og_dn_dic[og][species])
+                    dsfile.write("%s\t%s\n" % (og, og_ds_dic[og][species]))
+                    ds_list.append(og_ds_dic[og][species])
+                else:
+                    dnfile.write("%s\tNA\n" % (og))
+                    dsfile.write("%s\tNA\n" % (og))
+            sum_file.write("%s\t%s\t%s\t%s\t%s\n" % (species, numpy.mean(dn_list), numpy.var(dn_list), numpy.mean(ds_list), numpy.var(ds_list)))
+            dnfile.close()
+            dsfile.close()
+        sum_file.close()
+
     soc_larger_file = open("%s/soc_larger.txt" % outdir, 'w')
     sol_larger_file = open("%s/sol_larger.txt" % outdir, 'w')
     soc_list = []
     sol_list = []
     background_ogs = []
     for og in og_dnds_dic.keys():
+        if og not in og_list:
+            continue
         sol_larger = True
         soc_larger = True
         background_og = True
         for soc, sol in soc_sol_pairs.items():
             if soc in og_dnds_dic[og].keys() and sol in og_dnds_dic[og].keys():
-                if og_dnds_dic[og][soc] < og_dnds_dic[og][sol]:
+                if og_dnds_dic[og][soc] <= og_dnds_dic[og][sol]:
                     soc_larger = False
-                if og_dnds_dic[og][sol] < og_dnds_dic[og][soc]:
+                if og_dnds_dic[og][sol] <= og_dnds_dic[og][soc]:
                     sol_larger = False
             else:
                 soc_larger = False
@@ -1472,10 +1763,300 @@ def read_frees(indir, outdir, database_file, ortho_dic, go_dir):
     print len(background_ogs)
     soc_larger_file.close()
     sol_larger_file.close()
-    run_termfinder(soc_list, background_ogs, database_file, ortho_dic, "%s_soc" % go_dir)
-    run_termfinder(sol_list, background_ogs, database_file, ortho_dic, "%s_sol" % go_dir)
+#    run_termfinder(soc_list, background_ogs, database_file, ortho_dic, "%s_soc" % go_dir)
+#    run_termfinder(sol_list, background_ogs, database_file, ortho_dic, "%s_sol" % go_dir)
     sum_file.close()
 
+def read_aaml_phylos(og_list, indir, outdir):#, full_tree):
+    #reads free ratios files and gets dn/ds ratios
+    #can be easily extended to get dn and ds but those are low quality
+    soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}
+    outfile = open("%s/compiled_aaml_phylos.txt" % outdir, 'w')
+    og_phylo_dic = {}
+    for cur_og in og_list:
+        if not os.path.exists("%s/og_%s.alt" % (indir, cur_og)):
+            print "%s/og_%s.alt is missing" % (indir, cur_og)
+            continue
+        og_file =open("%s/og_%s.alt" % (indir, cur_og), 'rU')
+        aa_tree = False
+        first_line = True
+        line = og_file.readline()
+        while True:
+            if first_line:
+                seq_len = int(line.strip().split()[1])
+                first_line = False
+            if aa_tree:
+                aa = PhyloTree(line.strip().replace("#", ":"))
+                og_phylo_dic[cur_og] = aa
+                outfile.write("OG_%s\t%s\n" % (cur_og, aa.write(format = 5)))
+                aa_tree = False
+                break
+            if line.strip().startswith("tree length = "):
+                og_file.readline()
+                og_file.readline()
+                og_file.readline()
+                line = og_file.readline()
+                aa_tree = True
+                continue
+            if seq_len < 300:
+                break
+            line = og_file.readline()
+            if not line:
+                break
+#    marine_test(og_phylo_dic, PhyloTree(full_tree))
+#    blen_dists = mean_blengths(og_phylo_dic, PhyloTree(full_tree))
+#    for node, dist in blen_dists.items():
+#        outfile = open("%s/%s_blens.txt" % (outdir, node), 'w')
+#        for blen in dist:
+#            outfile.write("%s\n" % (blen))
+#        outfile.close()
+    outfile.close()
+    return og_phylo_dic
+        
+def marine_test(phylo_dic, full_tree, fore_list, exclude_list, outdir):
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+
+    full_phylo = PhyloTree(full_tree)
+    gw_blengths = {}
+    og_blengths = {}
+    p_dic = {}
+    for cur_og, og_phylo in phylo_dic.items():
+        cur_blengths = get_blengths(og_phylo, full_phylo)
+        og_blengths[cur_og] = cur_blengths
+        for name, dist in cur_blengths.items():
+            if name not in gw_blengths.keys():
+                gw_blengths[name] = []
+            gw_blengths[name].append(dist)
+    mean_blengths = {}
+    for name, dist_list in gw_blengths.items():
+        mean_blengths[name] = numpy.median(dist_list)
+    og_list = []
+    test_results_p = []
+    in_mean_dic = {}
+    out_mean_dic = {}
+
+    for cur_og, cur_blengths in og_blengths.items():
+        p_val, in_mean, out_mean = wilcox_test(cur_blengths, mean_blengths, fore_list, exclude_list)
+        if p_val:
+            og_list.append(cur_og)
+            test_results_p.append(p_val)
+            in_mean_dic[cur_og] = in_mean
+            out_mean_dic[cur_og] = out_mean
+            p_dic[cur_og] = p_val
+    for node, dist_list in gw_blengths.items():
+        outfile = open("%s/%s_blens.txt" % (outdir, node), 'w')
+        for blen in dist_list:
+            outfile.write("%s\n" % (blen))
+        outfile.close()
+#    pval_corr = smm.multipletests(test_results_p, alpha = 0.05, method = 'fdr_bh')[1]
+    pval_corr = test_results_p
+    p_dic = {}
+    for x in range(len(pval_corr)):
+        p_dic[og_list[x]] = pval_corr[x]
+    sorted_pvals = sorted(p_dic.items(), key = lambda x: x[1])
+    outfile = open("%s/marine_tests.txt" % outdir, 'w')
+    outfile.write("OG\tpval\t\n")
+    for pval in sorted_pvals:
+        outfile.write("%s\t%s\t%s\t%s\t%s\n" % (pval[0], pval[1], p_dic[pval[0]], in_mean_dic[pval[0]], out_mean_dic[pval[0]]))
+    outfile.close()
+
+def wilcox_test(blength_dic, standard_dic, fore_list, exclude_list):
+    ingroup = []
+    outgroup = []
+    for name, dist in blength_dic.items():
+        if dist < 0.00001:
+            continue
+        if standard_dic[name] == 0:
+            continue
+        if name in fore_list:
+            ingroup.append(dist / standard_dic[name])
+        elif name in exclude_list:
+            continue
+        else:
+            outgroup.append(dist / standard_dic[name])
+#       if not dist:
+#           print outgroup
+#           print blength_dic
+#           print standard_dic
+    if len(ingroup) <=2 or len(outgroup) <=2:
+        return False, -9, -9
+    u_val, p_val = scipy.stats.ranksums(ingroup, outgroup)
+    return p_val, numpy.median(ingroup), numpy.median(outgroup)
+        
+def get_blengths(og_phylo, full_tree):
+    #get the mean branch lengths for every branch encountered
+    blength_dic = {}
+    node_count = 0
+    og_leaves = []
+    for leaf in og_phylo.get_leaves():
+        og_leaves.append(leaf.name)
+    for node in full_tree.traverse("postorder"):
+        if node.is_leaf():
+            sibling_good = False
+            if node.name in og_leaves:
+                par = node.up
+                for sibling in par.traverse("postorder"):
+                    if compare_nodes(sibling, node):
+                        continue
+                    if sibling.name in og_leaves:
+                        sibling_good = True
+                        break
+                grand_par = par.up
+                if not grand_par:
+                    grand_par_good = True
+                else:
+                    for child in grand_par.traverse("postorder"):
+                        if compare_nodes(node, child):
+                            continue
+                        else:
+                            for leaf in child.get_leaves():
+                                if leaf.name in og_leaves:
+                                    grand_par_good = True
+                                    break
+            if sibling_good and grand_par_good:
+                if node.name not in blength_dic.keys():
+                    blength_dic[node.name] = og_phylo.get_leaves_by_name(node.name)[0].dist
+        else:
+            node_count += 1
+            node.add_features(label = node_count)
+            good_child_count = 0
+            good_parent = False
+            good_grand_parent = False
+            for child in node.children:
+                for leaf in child.get_leaves():
+                    if leaf.name in og_leaves:
+                        good_child_count += 1
+                        break
+            par = node.up
+            if not par:
+                good_parent = True
+                grand_par = False
+            else:
+                for sibling in par.children:
+                    if compare_nodes(sibling, node):
+                        continue
+                    for leaf in sibling.get_leaves():
+                        if leaf.name in og_leaves:
+                            good_parent = True
+                grand_par = par.up
+            if not grand_par:
+                good_grand_parent = True
+            else:
+                for sibling in grand_par.children:
+                    if compare_nodes(sibling, par):
+                        continue
+                    for leaf in sibling.get_leaves():
+                        if leaf.name in og_leaves:
+                            good_grand_parent = True
+            if good_parent and good_grand_parent and good_child_count == 2:
+                leaf_list = []
+                for leaf in node.get_leaves():
+                    for og_leaf in og_phylo.get_leaves():
+                        if leaf.name == og_leaf.name:
+                            leaf_list.append(leaf.name)
+                if node_count not in blength_dic.keys():
+                    blength_dic[node_count] = og_phylo.get_common_ancestor(leaf_list).dist
+    return blength_dic
+"""
+def get_blengths(phylo_dic, full_tree):
+    #get the mean branch lengths for every branch encountered
+    blength_dic = {}
+    node_count = 0
+    for cur_og, og_phylo in phylo_dic.items():
+        node_count = 0
+        og_leaves = []
+        for leaf in og_phylo.get_leaves():
+            og_leaves.append(leaf.name)
+        for node in full_tree.traverse("postorder"):
+            if node.is_leaf():
+                sibling_good = False
+                if node.name in og_leaves:
+                    par = node.up
+                    for sibling in par.traverse("postorder"):
+                        if compare_nodes(sibling, node):
+                            continue
+                        if sibling.name in og_leaves:
+                            sibling_good = True
+                            break
+                    grand_par = par.up
+                    if not grand_par:
+                        grand_par_good = True
+                    else:
+                        for child in grand_par.traverse("postorder"):
+                            if compare_nodes(node, child):
+                                continue
+                            else:
+                                for leaf in child.get_leaves():
+                                    if leaf.name in og_leaves:
+                                        grand_par_good = True
+                                        break
+                if sibling_good and grand_par_good:
+                    if node.name not in blength_dic.keys():
+#                        blength_dic[node.name] = []
+#                    blength_dic[node.name].append(og_phylo.get_leaves_by_name(node.name)[0].dist)
+                        blength_dic[node.name] = og_phylo.get_leaves_by_name(node.name)[0].dist
+            else:
+                node_count += 1
+                node.add_features(label = node_count)
+                good_child_count = 0
+                good_parent = False
+                good_grand_parent = False
+                for child in node.children:
+                    for leaf in child.get_leaves():
+                        if leaf.name in og_leaves:
+                            good_child_count += 1
+                            break
+                par = node.up
+                if not par:
+                    good_parent = True
+                    grand_par = False
+                else:
+                    for sibling in par.children:
+                        if compare_nodes(sibling, node):
+                            continue
+                        for leaf in sibling.get_leaves():
+                            if leaf.name in og_leaves:
+                                good_parent = True
+                    grand_par = par.up
+                if not grand_par:
+                    good_grand_parent = True
+                else:
+                    for sibling in grand_par.children:
+                        if compare_nodes(sibling, par):
+                            continue
+                        for leaf in sibling.get_leaves():
+                            if leaf.name in og_leaves:
+                                good_grand_parent = True
+                if good_parent and good_grand_parent and good_child_count == 2:
+                    leaf_list = []
+                    for leaf in node.get_leaves():
+                        for og_leaf in og_phylo.get_leaves():
+                            if leaf.name == og_leaf.name:
+                                leaf_list.append(leaf.name)
+                    if node_count not in blength_dic.keys():
+#                        blength_dic[node_count] = []
+#                    blength_dic[node_count].append(og_phylo.get_common_ancestor(leaf_list).dist)
+                        blength_dic[node_count] = og_phylo.get_common_ancestor(leaf_list).dist
+#    for k, v in blength_dic.items():
+#        print k
+#        print numpy.mean(v)
+#    print blength_dic
+    return blength_dic
+"""                        
+def compare_nodes(node1, node2):
+    node1_leaves = node1.get_leaves()
+    leaf1_names = []
+    node2_leaves = node2.get_leaves()
+    leaf2_names = []
+    for leaf1 in node1_leaves:
+        leaf1_names.append(leaf1.name)
+    for leaf2 in node2_leaves:
+        leaf2_names.append(leaf2.name)
+    for leaf1 in leaf1_names:
+        if leaf1 not in leaf2_names:
+            return False
+    return True
 
 def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads):
     #performs paml test on all OG's in list
@@ -1490,13 +2071,17 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
         if test_type == "model_d":
             prep_paml_files(cur_og, indir, outdir, "model_d", phylogeny_file)
         elif test_type == "free":
-            prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file)
+            no_stops = prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file)
+            if not no_stops:
+                continue
         elif test_type == "ancestral":
             cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
 #            if not os.path.exists("%s/OG_%s" % (outdir, cur_og)):
 #                os.mkdir("%s/OG_%s" % (outdir, cur_og))
 #            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
             prep_paml_files(cur_og, indir, outdir, "ancestral", phylogeny_file)
+        elif test_type == "aaml_blengths":
+            prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file)           
         else:
             taxon_present = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file)
             if not taxon_present:
@@ -1508,12 +2093,16 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
             worker = Worker(work_queue, result_queue, paml_tests.branch_site_worker)
         elif test_type == "branch":
             worker = Worker(work_queue, result_queue, paml_tests.branch_worker)
+        elif test_type == "branchpos":
+            worker = Worker(work_queue, result_queue, paml_tests.branch_positive_worker)
         elif test_type == "free":
               worker = Worker(work_queue, result_queue, paml_tests.free_ratios_worker)          
         elif test_type == "model_d":
               worker = Worker(work_queue, result_queue, paml_tests.branch_site_d_worker)          
         elif test_type == "ancestral":
-            worker = Worker(work_queue, result_queue, paml_tests.ancestor_reconstruction)          
+            worker = Worker(work_queue, result_queue, paml_tests.ancestor_reconstruction)  
+        elif test_type == "aaml_blengths":
+            worker = Worker(work_queue, result_queue, paml_tests.aaml_worker)  
         jobs.append(worker)
         worker.start()
     try:
@@ -1627,7 +2216,74 @@ def prank_align(og_list, indir, outdir, use_backbone, phylogeny_file, num_thread
             j.terminate()
             j.join()
 
-def get_cds():
+def fsa_coding_align(og_list, indir, outdir, num_threads, iscoding): 
+    #run fsa alignments
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    og_file_list = []
+    work_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    pool = multiprocessing.Pool(processes = num_threads)
+    work_list = []
+    for og in og_list:
+        og_file = "%s/og_cds_%s.fa" % (indir, og)
+        work_list.append([og_file, outdir, iscoding])
+#        work_queue.put([og_file, outdir, iscoding])
+    pool.map(fsa_align_worker, work_list)
+    pool.close()
+    pool.join()
+#    jobs = []
+#    for i in range(num_threads):
+#        worker = Worker(work_queue, result_queue, fsa_align_worker)
+#        jobs.append(worker)
+#        worker.start()
+#    try:
+#    for j in jobs:
+#        j.join()
+#    except KeyboardInterrupt:
+#        for j in jobs:
+#            j.terminate()
+#            j.join()
+    print "aligment complete"
+
+#def fsa_align_worker(og_file, outdir, iscoding):
+def fsa_align_worker(param_list):
+    og_file = param_list[0]
+    outdir = param_list[1]
+    iscoding = param_list[2]
+    #the worker method for multiprocessing the fsa alignments
+    STOP_CODONS = ["TGA", "TAA", "TAG"]
+    cur_og = og_file.split("/")[-1]
+    og_num = cur_og.split("_")[2].split(".fa")[0]
+    reader = SeqIO.parse(og_file, format = 'fasta')
+    form_og_file = "%s/og_cds_%s.fa" % (outdir, og_num)
+    seqs_formatted = open(form_og_file, 'w')
+    for rec in reader:
+        cur_seq = str(rec.seq)
+        if iscoding:
+            if cur_seq[-3:] in STOP_CODONS:
+                cur_seq = cur_seq[:-3] + "NNN"
+        seqs_formatted.write(">%s\n%s\n" % (rec.id, cur_seq))
+    seqs_formatted.close()
+    
+    if iscoding:
+        cmd = ["/Genomics/kocherlab/berubin/local/src/fsa-1.15.9/bin/fsa", "--nucprot", "%s" % form_og_file]
+    else:
+        cmd = ["/Genomics/kocherlab/berubin/local/src/fsa-1.15.9/bin/fsa", "%s" % form_og_file]
+    FNULL = open(os.devnull, 'w')
+    with open("%s/og_cds_%s.afa" % (outdir, og_num), 'w') as outfile:
+        subprocess.call(cmd, stdout = outfile, stderr = FNULL)
+    gblock("%s/og_cds_%s.afa" % (outdir, og_num))
+    print "%s alignment complete" % og_num
+    return
+
+def gblock(inalignment):
+    #run gblocks on given file
+    cmd = ["/Genomics/kocherlab/berubin/local/src/Gblocks_0.91b/Gblocks", inalignment, "-t=c", "-b5=h"]
+    subprocess.call(cmd)
+
+
+def get_bee_cds():
     #get dictionary containing CDS for all genomes
     seq_dic = {}
     for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB"]:
@@ -1650,6 +2306,15 @@ def get_cds():
     seq_dic[species] = {}
     for rec in reader:
         seq_dic[species][rec.id] = str(rec.seq)
+    return seq_dic
+
+def get_bumble_cds():
+    seq_dic = {}
+    for species in ["BIMP", "PMIB"]:
+        reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (species, species), format = 'fasta')
+        seq_dic[species] = {}
+        for rec in reader:
+            seq_dic[species][rec.id] = str(rec.seq)
     return seq_dic
 
 def get_cds(base_dir):
@@ -1689,8 +2354,10 @@ def get_prot_seqs():
 
 
 def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
-    #read/parse orthology file and write files containing all sequences
-    #also create an index file that lists the number of taxa in each OG
+    #read/parse orthology file and write files containing all sequences.
+    #also create an index file that lists the number of taxa in each OG.
+    #writes OG's with paralogs in them but just doesn't write sequences
+    #from the species with the paralogs.
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
     ref_file = open(indexfile, 'w')
@@ -1705,9 +2372,8 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
         if int(cur_line[0]) != int(cur_line[1]):
             if not paras_allowed:
                 continue
-        ref_file.write("%s\t%s\t%s\n" % (counter, cur_line[0], num_paras))
-
         outfile = open("%s/og_cds_%s.fa" % (outdir, counter), 'w')
+        genes_list = []
         for seqs in cur_line[3:]:
             if "*" in seqs:
                 continue
@@ -1715,38 +2381,51 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
                 continue
             cur_seqs = seqs.split(",")
             for seq in cur_seqs:
+                genes_list.append(seq)
                 cur_species = seq[0:4]
-                outfile.write(">%s\n%s\n" % (seq, seq_dic[cur_species][seq]))
+                outfile.write(">%s\n%s\n" % (seq, seq_dic[cur_species][seq].upper()))
+        ref_file.write("%s\t%s\t%s\t%s\n" % (counter, cur_line[0], num_paras, "\t".join(genes_list)))
         outfile.close()
         counter += 1
     ref_file.close()
 
-def concatenate_for_raxml(input_dir, outfile):
+def concatenate_for_raxml(input_dir, outfile, og_list):
     #take directory of alignments and concatenate them all into a
     #RAxML formatted fasta file
     SPECIES_LIST = ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB", "LALB", "Nmel", "Dnov"]
+    SPECIES_LIST = ["ACEP", "ACOL", "AECH", "AMEL", "CBIR", "CCOS", "CFLO", "DQUA", "HSAL", "LHUM", "MPHA", "PBAR", "PGRA", "SINV", "TCOR", "TSEP", "TZET", "VEME", "WAUR"]
+    SPECIES_LIST = ["ASUC", "ECOL", "GAPI", "GBOM", "GINT", "GMEN", "FNIG", "GOMB", "HPAR", "VMIM", "FPER"]
+    SPECIES_LIST = ["ATUM", "BAPI", "BAUS", "BBAC", "BBIR", "BHEN", "BMEL", "BNIG", "BQUI", "BTAM", "OANT", "THOE"]
     full_dic = {}
     for species in SPECIES_LIST:
         full_dic[species] = []
     seq_len = 0
-    for alignment in glob("%s/*2.fas" % input_dir):
+    seq_count = 0
+    for og in og_list:
+        alignment = "%s/og_cds_%s.afa-gb" % (input_dir, og)
+#    for alignment in glob("%s/*.afa-gb" % input_dir):
         reader = SeqIO.parse(alignment, format = 'fasta')
         for rec in reader:
             cur_species = rec.id[0:4]
-            full_dic[cur_species].append(str(rec.seq))
-        seq_len += len(rec.seq)
+            cur_seq = Seq.Seq(str(rec.seq).replace("-", "N")).translate()
+            full_dic[cur_species].append(str(cur_seq))
+        seq_count += 1
+        seq_len += len(cur_seq)
+#        if seq_count >= 100:
+#            break
+    print "total genes used: " + str(seq_count)
     writer = open(outfile, 'w')
     writer.write("%s %s\n" % (len(SPECIES_LIST), seq_len))
     for species, seq_list in full_dic.items():
         writer.write("%s\n%s\n" % (species, "".join(seq_list)))
     writer.close()
 
-def gene_trees(og_list, aligndir, outdir, num_threads):
+def gene_trees(og_list, aligndir, outdir, constrained, constraint_tree, num_threads):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     work_list = []
     for og in og_list:
-        work_list.append([og, aligndir, outdir])
+        work_list.append([og, aligndir, outdir, constrained, constraint_tree])
     pool = multiprocessing.Pool(processes = num_threads)
     pool.map(gene_tree_worker, work_list)
     pool.close()
@@ -1757,8 +2436,10 @@ def gene_tree_worker(param_list):
     og = param_list[0]
     aligndir = param_list[1]
     outdir = param_list[2]
+    constrained = param_list[3]
+    constraint_tree = param_list[4]
     seq_dic = {}
-    reader = SeqIO.parse("%s/og_cds_%s.1.fas" % (aligndir, og), format = 'fasta')
+    reader = SeqIO.parse("%s/og_cds_%s.afa" % (aligndir, og), format = 'fasta')
     for rec in reader:
         seq_dic[rec.id] = str(rec.seq)
         seqlen = len(str(rec.seq))
@@ -1769,7 +2450,11 @@ def gene_tree_worker(param_list):
     outfile.close()
     switch_dir = os.getcwd()
     os.chdir(outdir)
-    cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og)]
+    if not constrained:
+        cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og)]
+    else:
+#        cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og), '-g', constraint_tree, '-o', 'AMEL']
+        cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og), '-g', constraint_tree, '-o', 'LALB,DNOV']
     subprocess.call(cmd)
     os.chdir(switch_dir)
 
@@ -1785,7 +2470,7 @@ def read_ortho_index(index_file, min_taxa, paras_allowed):
         if not paras_allowed:
             if int(cur_line[2]) > 0:
                 continue
-        if int(cur_line[1]) >= min_taxa:
+        if int(cur_line[1]) - int(cur_line[2]) >= min_taxa:
             og_list.append(int(cur_line[0]))
     return og_list
 
@@ -1893,7 +2578,7 @@ def overlap(mytuple, tuplelist):
         tuplelist.append(mytuple)
     return tuplelist
    
-def lasihali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
+def lasihali_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for PAML analysis tree
     ingroup_list = ["HLIG", "HRUB", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "LFIG"]
     tree = PhyloTree(phylogeny_file)
@@ -1912,13 +2597,59 @@ def lasihali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_fil
     tree_str = tree.write(format = 5, features = ["foreground"])
     tree_list = tree_str.split("[&&NHX:foreground=foreground]")
     beginning = tree_list[0].rsplit(":", 1)
-    new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
 #    tree_str = tree_str.replace("):%s" % target_branch, ")#1:%s" % target_branch)
     outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
     outfile.write(new_tree)
     outfile.close()
 
-def augo_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
+def lasiaugo_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file):
+    #trims taxa and adds foreground tags for PAML analysis tree
+    ingroup_list = ["LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "LFIG"]
+    augo_list = ["AAUR", "APUR"]
+    tree = PhyloTree(phylogeny_file)
+    tree.prune(taxa_list)
+    tree.unroot()
+    leaf_list = []
+    for leaf in tree:
+        leaf_list.append(leaf.name)
+    trimmed_ingroup = []
+    for species in ingroup_list:
+        if species in leaf_list:
+            trimmed_ingroup.append(species)
+    trimmed_augos = []
+    for species in augo_list:
+        if species in leaf_list:
+            trimmed_augos.append(species)
+#    target_branch = tree.get_common_ancestor(trimmed_ingroup).dist            
+    tree.get_common_ancestor(trimmed_ingroup).add_features(foreground = "foreground")
+    tree.get_common_ancestor(trimmed_augos).add_features(foreground = "augo_fore")
+#    tree_str = tree.write(format = 5)
+    tree_str = tree.write(format = 5, features = ["foreground"])
+
+    tree_list = tree_str.split("[&&NHX:foreground=foreground]")
+    beginning = tree_list[0].rsplit(":", 1)
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+    tree_list = new_tree.split("[&&NHX:foreground=augo_fore]")
+    beginning = tree_list[0].rsplit(":", 1)
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+
+#    tree_str = tree_str.replace("):%s" % target_branch, ")#1:%s" % target_branch)
+    outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
+    outfile.write(new_tree)
+    outfile.close()
+
+
+def augo_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for PAML analysis tree
     ingroup_list = ["AAUR", "APUR"]
     tree = PhyloTree(phylogeny_file)
@@ -1935,12 +2666,15 @@ def augo_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     tree_str = tree.write(format = 5, features = ["foreground"])
     tree_list = tree_str.split("[&&NHX:foreground=foreground]")
     beginning = tree_list[0].rsplit(":", 1)
-    new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:    
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
     outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
     outfile.write(new_tree)
     outfile.close()
 
-def hali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
+def hali_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for PAML analysis tree
     ingroup_list = ["HLIG", "HRUB"]
     tree = PhyloTree(phylogeny_file)
@@ -1957,14 +2691,18 @@ def hali_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     tree_str = tree.write(format = 5, features = ["foreground"])
     tree_list = tree_str.split("[&&NHX:foreground=foreground]")
     beginning = tree_list[0].rsplit(":", 1)
-    new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
     outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
     outfile.write(new_tree)
     outfile.close()
 
-def lasi_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
+def lasi_branch_fore(taxa_list, foreground, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for PAML analysis tree
     ingroup_list = ["LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "LFIG"]
+#    ingroup_list = ["LCAL", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "LFIG"]
     tree = PhyloTree(phylogeny_file)
     tree.prune(taxa_list)
     tree.unroot()
@@ -1979,7 +2717,10 @@ def lasi_branch_fore(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     tree_str = tree.write(format = 5, features = ["foreground"])
     tree_list = tree_str.split("[&&NHX:foreground=foreground]")
     beginning = tree_list[0].rsplit(":", 1)
-    new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
+    if "clade" in foreground:
+        new_tree = beginning[0] + "$1:" + beginning[1] + tree_list[1]
+    else:
+        new_tree = beginning[0] + "#1:" + beginning[1] + tree_list[1]
     outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
     outfile.write(new_tree)
     outfile.close()
@@ -2028,7 +2769,7 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
     species_syn_vars = {}
     species_nsyn_vars = {}
     species_fourf_vars = {}
-
+    window_metrics = {}
     for og_num in og_list:
         print og_num
         node_index_dic, node_seqs = read_ancestral_seq("%s/og_%s_working/rst" % (indir, og_num))
@@ -2044,6 +2785,7 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
 #        print inseq_dic.keys()
 #        print node_seqs
         for species, seq in inseq_dic.items():
+            cur_metric = window_metric(seq, node_seqs[nearest_anc[species]])
             syn_pos, nsyn_pos, fourf_pos = sub_positions(seq, node_seqs[nearest_anc[species]])
 #            syn_pos, nsyn_pos, fourf_pos = sub_positions(seq, inseq_dic["ECOL"])
             if species not in species_syn_dists.keys():
@@ -2053,7 +2795,9 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
                 species_syn_vars[species] = []
                 species_nsyn_vars[species] = []
                 species_fourf_vars[species] = []
-                
+                window_metrics[species] = []
+            if cur_metric:
+                window_metrics[species].append(cur_metric)
             syn_dists = calc_distances(syn_pos)
 #            print "syn dists"
 #            print syn_pos
@@ -2100,6 +2844,10 @@ def compile_ancestrals(og_list, indir, aligndir, outdir):
         for var in species_fourf_vars[species]:
             outfile.write(str(var) + "\n")
         outfile.close()
+        outfile = open("%s/%s_window_metric.txt" % (outdir, species), 'w')
+        for met in window_metrics[species]:
+            outfile.write(str(met) + "\n")
+        outfile.close()
 
 
 #    print species_nsyn_dists["SAL1"]
@@ -2122,6 +2870,31 @@ def calc_distances(pos_list):
             dist_list.append(abs(position - other_pos))
         used_pos.append(position)
     return dist_list
+
+def window_metric(inseq, ancestor):
+    window_size = 60
+    step_size = 30
+    min_diff = 3
+    num_windows = 0
+    index = 0
+    metric_sum = 0
+    while index + step_size < len(inseq):
+        cur_inseq = inseq[index : index+window_size]
+        cur_anc = ancestor[index : index+window_size]
+        syn_pos, nsyn_pos, fourf_pos = sub_positions(cur_inseq, cur_anc)
+        num_syns = len(syn_pos)
+        num_nsyns = len(nsyn_pos)
+        num_fourfs = len(fourf_pos)
+        if num_syns + num_nsyns >= min_diff:
+            num_windows += 1
+            metric_sum += abs(num_nsyns - num_syns)
+        index += step_size
+    if num_windows > 3:
+        return metric_sum / num_windows
+    else:
+        return False
+
+
 
 def sub_positions(inseq, ancestor):
     fourfold_list = changes.fourfold_codons()
@@ -2216,7 +2989,9 @@ def make_go_database(ortho_dic, data_species, outpath):
         for k, v in ortho_dic.items():
             if species in v.keys():
                 species_dic[v[species][0]] = k
-        reader = open("/Genomics/kocherlab/berubin/annotation/interproscan/%s.gaf" % species, 'rU')
+#        reader = open("/Genomics/kocherlab/berubin/annotation/interproscan/%s.gaf" % species, 'rU')
+#        reader = open("/Genomics/kocherlab/berubin/acacias/selection/gilliamella/interproscan/%s.gaf" % species, 'rU')
+        reader = open("/Genomics/kocherlab/berubin/acacias/selection/bartonella/interproscan/%s.gaf" % species, 'rU')
         for line in reader:
             cur_gene = line.split()[1]
             if cur_gene in species_dic.keys():
@@ -2241,6 +3016,67 @@ def make_go_database(ortho_dic, data_species, outpath):
         og_file.write("%s\n" % og)
     outfile.close()
     og_file.close()
+
+def hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, outlier_num):
+    reader = open(population_file, 'rU')
+    pop_list = []
+    gene_og_dic = {}
+    if os.path.exists("%s_og_index" % population_file):
+        reader = open("%s_og_index" % population_file, 'rU')
+        for line in reader:
+            cur_line = line.split()
+            pop_list.append(int(cur_line[1]))
+            gene_og_dic[cur_line[0]] = int(cur_line[1])
+    else:
+        og_index = open("%s_og_index" % population_file, 'w')
+        for line in reader:
+            cur_gene = line.split()[0]
+            cur_og = int(get_og_num(cur_gene[0:-3], ortho_dic))
+            if cur_og:
+                pop_list.append(cur_og)
+                gene_og_dic[cur_gene] = cur_og
+                og_index.write("%s\t%s\n" % (cur_gene, cur_og))
+#        print cur_og
+#            print cur_gene
+        og_index.close()
+    reader = open(pop_condition_file, 'rU')
+    pop_cond_list = []
+    for line in reader:
+        cur_gene = line.split()[0]
+        if cur_gene in gene_og_dic.keys():
+            pop_cond_list.append(gene_og_dic[cur_gene])
+    reader = open(subset_file, 'rU')
+    subset_list = []
+    for line in reader:
+        if outlier_num > 0:
+            if len(subset_list) > outlier_num:
+                break
+        if line.startswith("#"):
+            continue
+        if line.startswith("OG\t"):
+            continue
+        if line.startswith("baseMean"):
+            continue
+#        if float(line.split()[1]) > 0.05:
+#            continue
+        if line.startswith("OG_"):
+            cur_og = int(line.split()[0].split("OG_")[1])
+        else:
+            cur_og = int(line.split()[0])
+        if cur_og in pop_list:
+            subset_list.append(cur_og)
+    subset_cond_list = []
+    for sub in subset_list:
+        if sub in pop_cond_list:
+            subset_cond_list.append(sub)
+    print "Total population: %s" % len(pop_list)
+    print "Total population with condition: %s" % len(pop_cond_list)
+    print "Subset of population: %s" % len(subset_list)
+    print "Subset with condition: %s" % len(subset_cond_list)
+    print "Probability this many or more: %s" % scipy.stats.hypergeom.sf(len(subset_cond_list)-1, len(pop_list), len(pop_cond_list), len(subset_list))
+    print "Probability this many or fewer: %s" % scipy.stats.hypergeom.cdf(len(subset_cond_list)+1, len(pop_list), len(pop_cond_list), len(subset_list))
+    print subset_cond_list
+    
 
 def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
 #    reader = open(backfile, 'rU')
@@ -2291,14 +3127,188 @@ def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
             readogs = False
             inog = False
         
-def external_list(forefile):
+def external_list(forefile, sig_column, sig_cutoff):
     reader = open(forefile, 'rU')
     fore_list = []
     for line in reader:
-        fore_list.append(int(line.strip().split()[0]))
+        if line.startswith("OG\t"):
+            continue
+        if line.startswith("baseMean"):
+            continue
+        cur_line = line.strip().split()
+        if sig_column > -1:
+            if float(cur_line[sig_column]) < sig_cutoff:
+                if line.startswith("OG_"):
+                    fore_list.append(int(line.strip().split()[0][3:]))
+                else:
+                    fore_list.append(int(line.strip().split()[0]))
+        else:
+            if line.startswith("OG_"):
+                fore_list.append(int(line.strip().split()[0][3:]))
+            else:
+                fore_list.append(int(line.strip().split()[0]))
+
     return fore_list
                        
-def og_list_termfinder(forefile, backfile, database_file, ortho_dic, go_dir):
-    fore_list = external_list(forefile)
-    back_list = external_list(backfile)
+def og_list_termfinder(forefile, backfile, database_file, ortho_dic, go_dir, sig_column, sig_cutoff):
+    fore_list = external_list(forefile, int(sig_column), float(sig_cutoff))
+    back_list = external_list(backfile, -1, -1)
     run_termfinder(fore_list, back_list, database_file, ortho_dic, go_dir)
+
+def yn_estimates(og_list,indir, outdir):
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    dnds_dic = {}
+    dn_dic = {}
+    ds_dic = {}
+    species_pairs = []
+    for cur_og in og_list:
+        good_align = prep_paml_files(cur_og, indir, outdir, "yn", "yn")
+        print cur_og
+        if not good_align:
+            continue
+        pair_dic = paml_tests.pairwise_yn(cur_og, outdir)
+  
+#        print pair_dic["SPRA"]["SLEU"]
+        dnds_dic[cur_og] = {}
+        dn_dic[cur_og] = {}
+        ds_dic[cur_og] = {}
+        for gene in pair_dic.keys():
+            for other_gene in pair_dic[gene]:
+                species_tuple = (gene[0:4], other_gene[0:4])
+                reverse_tuple = (other_gene[0:4], gene[0:4])
+                if species_tuple not in species_pairs and reverse_tuple not in species_pairs:
+                    species_pairs.append(species_tuple)
+                    cur_tuple = species_tuple
+                elif species_tuple in species_pairs:
+                    cur_tuple = species_tuple
+                elif reverse_tuple in species_pairs:
+                    cur_tuple = reverse_tuple
+                if float(pair_dic[gene][other_gene]["YN00"]["omega"]) == 99:# or float(pair_dic[gene][other_gene]["YN00"]["omega"]) == 0.0:
+                    dnds_dic[cur_og][cur_tuple] = "NA"
+                    dn_dic[cur_og][cur_tuple] = "NA"
+                    ds_dic[cur_og][cur_tuple] = "NA"
+                    continue
+                if cur_tuple not in dnds_dic[cur_og].keys() and reverse_tuple not in dnds_dic[cur_og].keys():
+                    dnds_dic[cur_og][cur_tuple] = pair_dic[gene][other_gene]["YN00"]["omega"]
+                    dn_dic[cur_og][cur_tuple] = pair_dic[gene][other_gene]["YN00"]["dN"]
+                    ds_dic[cur_og][cur_tuple] = pair_dic[gene][other_gene]["YN00"]["dS"]
+    for species_pair in species_pairs:
+        outfile = open("%s/%s_%s.yn" % (outdir, species_pair[0], species_pair[1]), 'w')
+        dnfile = open("%s/%s_%s_dn.yn" % (outdir, species_pair[0], species_pair[1]), 'w')
+        dsfile = open("%s/%s_%s_ds.yn" % (outdir, species_pair[0], species_pair[1]), 'w')
+        for og_num in og_list:
+            if og_num in dnds_dic.keys():
+                if species_pair in dnds_dic[og_num].keys():
+                    outfile.write("%s\t%s\n" % (og_num, dnds_dic[og_num][species_pair]))
+                    dnfile.write("%s\t%s\n" % (og_num, dn_dic[og_num][species_pair]))
+                    dsfile.write("%s\t%s\n" % (og_num, ds_dic[og_num][species_pair]))
+        outfile.close()
+    return dnds_dic
+
+def gene_flanks(gff_file, genome_dic):
+    gene_dic = {}
+    for line in gff_file:
+        cur_line = line.split()
+        if cur_line[2] == "gene":
+            cur_name = cur_line[-1].split("Name=")[1][0:-1]
+            cur_start = int(cur_line[3])
+            cur_end = int(cur_line[4])
+            cur_scaf = cur_line[0]
+            gene_dic[cur_name] = (cur_scaf, cur_start, cur_end)
+    flank_dic = {}
+    for gene_name, coords in gene_dic.items():
+        scaf_seq = genome_dic[coords[0]]
+        start_coord = coords[1] - 2000
+        end_coord = coords[2] + 2000
+        if coords[1] < 2000:
+            start_coord = 0
+        if end_coord > len(scaf_seq):
+            end_coord = len(scaf_seq)
+        scafs = scaf_seq[start_coord : coords[1]] + scaf_seq[coords[2] : end_coord]
+        scafs = scafs.replace("N", "")
+        flank_dic[gene_name] = scafs
+    return flank_dic
+
+def codon_bias(outdir, species_list):
+    official_dir = "/Genomics/kocherlab/berubin/official_release"
+    if not os.path.isdir("%s/codon_bias" % (outdir)):
+        os.mkdir("%s/codon_bias/" % (outdir))
+    summary_file = open("%s/codon_bias/codon_bias.summ" % outdir, 'w')
+    for target_species in species_list:
+        print target_species
+        if not os.path.isdir("%s/codon_bias/%s" % (outdir, target_species)):
+            os.mkdir("%s/codon_bias/%s" % (outdir, target_species))
+        if target_species == "LALB":
+            gff_file = open("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species, target_species, target_species), 'rU')
+            genome_seq = SeqIO.parse("%s/%s/%s_v3/%s/%s_genome_v3.0.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+
+            cds_seqs = SeqIO.parse("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+        else:
+            gff_file = open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU')            
+            genome_seq = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+            cds_seqs = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+        seq_dic = {}
+        for rec in genome_seq:
+            seq_dic[rec.id] = str(rec.seq)
+        flank_dic = gene_flanks(gff_file, seq_dic)
+        ncp_dic = {}
+        outfile = open("%s/codon_bias/%s_ncp.txt" % (outdir, target_species), 'w')
+        outfile.write("OG\tNcp\n")
+        for rec in cds_seqs:
+            if len(flank_dic[rec.id[:-3]]) < 1000 or len(rec.seq) < 300:
+                continue
+            ncp = paml_tests.encprime(rec.id[:-3], rec.seq, flank_dic[rec.id[:-3]], "%s/codon_bias/%s" % (outdir, target_species))
+            ncp_dic[rec.id[:-3]] = ncp
+            outfile.write("%s\t%s\n" % (rec.id[:-3], ncp))
+            outfile.flush()
+        outfile.close()
+        summary_file.write("%s\t%s\n" % (target_species, numpy.mean(ncp_dic.values())))
+        summary_file.flush()
+    summary_file.close()
+        
+def codon_bias(outdir, species_list, og_list, ortho_dic):
+    official_dir = "/Genomics/kocherlab/berubin/official_release"
+    if not os.path.isdir("%s/codon_bias" % (outdir)):
+        os.mkdir("%s/codon_bias/" % (outdir))
+    summary_file = open("%s/codon_bias/codon_bias.summ" % outdir, 'w')
+    for target_species in species_list:
+        print target_species
+        if not os.path.isdir("%s/codon_bias/%s" % (outdir, target_species)):
+            os.mkdir("%s/codon_bias/%s" % (outdir, target_species))
+        if target_species == "LALB":
+            gff_file = open("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species, target_species, target_species), 'rU')
+            genome_seq = SeqIO.parse("%s/%s/%s_v3/%s/%s_genome_v3.0.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+
+            cds_seqs = SeqIO.parse("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
+        else:
+            gff_file = open("%s/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU')            
+            genome_seq = SeqIO.parse("%s/%s/%s_genome_v1.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+            cds_seqs = SeqIO.parse("%s/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+        seq_dic = {}
+        for rec in genome_seq:
+            seq_dic[rec.id] = str(rec.seq)
+        flank_dic = gene_flanks(gff_file, seq_dic)
+        ncp_dic = {}
+        outfile = open("%s/codon_bias/%s_ncp.txt" % (outdir, target_species), 'w')
+        outfile.write("OG\tNcp\n")
+        og_outfile = open("%s/codon_bias/%s_ncp_ogs.txt" % (outdir, target_species), 'w')
+        og_outfile.write("OG\tNcp\n")
+        for rec in cds_seqs:
+            if len(flank_dic[rec.id[:-3]]) < 1000 or len(rec.seq) < 300:
+                continue
+            ncp = paml_tests.encprime(rec.id[:-3], rec.seq, flank_dic[rec.id[:-3]], "%s/codon_bias/%s" % (outdir, target_species))
+            ncp_dic[rec.id[:-3]] = ncp
+            outfile.write("%s\t%s\n" % (rec.id[:-3], ncp))
+            og_num = get_og_num(rec.id[:-3], ortho_dic)
+            if og_num in og_list:
+                og_outfile.write("%s\t%s\n" % (rec.id[:-3], ncp))
+#            outfile.flush()
+#            og_outfile.flush()
+        outfile.close()
+        og_outfile.close()
+        summary_file.write("%s\t%s\n" % (target_species, numpy.mean(ncp_dic.values())))
+        summary_file.flush()
+    summary_file.close()
+        
+#def hka_outlier_gos():
