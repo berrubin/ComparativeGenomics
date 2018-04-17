@@ -12,7 +12,7 @@ parser.add_option("-m", "--min_og_group", dest = "min_og_group", type = int, def
 parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int, default = 100000, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers more than this number.")
 parser.add_option("-o", "--prefix", dest = "prefix", type = str, help = "String used at the beginning of output directories and files.")
 parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Output directory.")
-parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int)
+parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int, default = 4)
 parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho", help = "File of orthologous groups.")
 parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree", help = "Phylogeny of species examined.")
 parser.add_option("-a", "--action", dest = "action", type = str, help = "Analysis to do", default = "paml")
@@ -20,6 +20,10 @@ parser.add_option("-i", "--inspecies", dest = "inspecies", type = str, help = "S
 parser.add_option("-u", "--outspecies", dest = "outspecies", type = str, help = "Outgroup species in pairwise analyses")
 parser.add_option("-y", "--timetree", dest = "timetree", type = str, help = "Time calibrated tree")
 parser.add_option("-f", "--noncoding_seq_type", dest = "noncoding_seq_type", type = str, help = "Sequence type for HKA tests (flank, intron, or first_intron)", default = "flank")
+parser.add_option("-g", "--no_gblocks", dest = "use_gblocks", action = "store_false", default = True, help = "Should Gblocks be used on alignments?")
+parser.add_option("-c", "--foreground", dest = "foreground", type = str, default = "", help = "Foreground taxa for selection test")
+parser.add_option("-d", "--param_file", dest = "param_file", type = str)
+parser.add_option("-j", "--rerconverge_output", dest = "rerconverge_output", type = "str", default = "", help = "Output file from RERconverge")
 (options, args) = parser.parse_args()
 
 STOP_CODONS = ["TAA", "TAG", "TGA"]
@@ -30,6 +34,8 @@ ANC_SOLITARY = ["Nmel", "Dnov"]
 POLYMORPHIC = ["LCAL", "LALB"]
 
 def main():
+    cds_dic = utils.read_params(options.param_file)
+    print options.action
     if not os.path.isdir(options.base_dir):
         os.mkdir(options.base_dir)     #create working directory
 #    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
@@ -44,8 +50,13 @@ def main():
     if options.action == "godatabase":
         ipr_taxa_list = ["AAUR", "APUR", "AVIR", "HLIG", "HRUB", "LCAL", "LFIG", "LLEU", "LMAL"]
         ipr_taxa_list = ["GNIG"]
-        ipr_taxa_list = ["BNIG"]
-        utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s_thoe_missing" % (options.base_dir, options.prefix))
+        ipr_taxa_list = ["AMEL"]
+        ipr_taxa_list = ["PGRA"]
+        ipr_taxa_list = ["ACEP"]
+        gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/AMEL/AMEL.gaf"
+        gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/PGRA/PGRA.gaf"
+        gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/ACEP/ACEP.gaf"
+        utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s" % (options.base_dir, options.prefix), gaf_file)
         sys.exit()
     if options.action == "align_coding":
         paras_allowed = True #because of the way that write_orthos works
@@ -58,38 +69,53 @@ def main():
 #        cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
 #        cur_og_list = [368]
         cur_og_list = og_list
-        utils.fsa_coding_align(cur_og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.num_threads, iscoding)
+#        utils.fsa_coding_align(cur_og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.num_threads, iscoding)
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list)
+        og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed)
+        utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
         sys.exit()
     if options.action == "write_orthos":
+
 #        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/gilliamella/renamed_cds_seqs")
-        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/bartonella/renamed_cds_seqs")
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/ants/termites/termite_data/renamed_cds_seqs")
+#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/bartonella/renamed_cds_seqs")
+#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/treehoppers/cds_seqs")
+#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/ants/PGRA_ants/renamed_cds_seqs")
 #        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/ants/bees/bee_data/renamed_cds_seqs")
 #        seq_dic = utils.get_bee_cds()
 #        seq_dic = utils.get_bumble_cds()
+#        seq_dic = utils.get_acacia_cds()
+        seq_dic = utils.get_cds_files(cds_dic)
         #write fastas for ALL orthologous groups
         utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
         sys.exit()
     if options.action == "yn_dnds":
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix))
+
+        utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file)
+        sys.exit()
+    if options.action == "gc_content":
+        if not os.path.isdir("%s/%s_gc_content" % (options.base_dir, options.prefix)):
+            os.mkdir("%s/%s_gc_content" % (options.base_dir, options.prefix))
+        paras_allowed = True
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        utils.gc_content(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gc_content" % (options.base_dir, options.prefix))
         sys.exit()
     if options.action == "free_ratios":
         test_type = "free"
         foreground = "free"
-#        get_dn_ds = True
-        get_dn_ds = False
+        get_dn_ds = True
+#        get_dn_ds = False
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
 #        og_list = [3050]
-#        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
+#        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
 #        target_taxa = ["AAUR", "APUR", "LFIG", "LMAR", "LZEP", "LVIE", "LOEN", "LPAU"]
 #        cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
         cur_og_list = og_list
         utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list)
+#        for leafer in ["TZET", "TSEP", "TCOR", "AECH", "ACOL", "ACEP"]:
+#            utils.read_frees_subset("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_subset_%s_results" % (options.base_dir, options.prefix, foreground, test_type, leafer), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list, ["CFLO", "COBS", "DQUA", "HSAL", "LHUM", "PBAR", "SINV", "CBIR", "PGRA","CCOS", leafer])
         sys.exit()
     if options.action == "termfinder":
 #        utils.og_list_termfinder("%s/lasihali_augochlorine_overlap_branch_sigs.txt" % (options.base_dir), "%s/lasihali_augochlorine_overlap_branch_tests.txt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/lasihali_augochlorine_overlap_branch_sigs_go" % (options.base_dir), -9, 0.05)
@@ -103,9 +129,26 @@ def main():
 #        utils.og_list_termfinder("%s/bart_BNIG_branch.lrt_slower.lrt" % (options.base_dir), "%s/bart_BNIG_branch.lrt.lrt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/bart_BNIG_branch_go_slower" % (options.base_dir), -9, 0.05)
 #        utils.og_list_termfinder("%s/bart_BNIG_bs.lrt.lrt" % (options.base_dir), "%s/bart_BNIG_bs.lrt.lrt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/bart_BNIG_bs_go_0.05" % (options.base_dir), -9, 0.05)
 #        utils.og_list_termfinder("%s/bart_BNIG_bs.lrt.lrt" % (options.base_dir), "%s/bart_BNIG_bs.lrt.lrt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/bart_BNIG_bs_go_0.01" % (options.base_dir), -9, 0.01)
-        utils.og_list_termfinder("%s/../thoe_missing.txt" % (options.base_dir), "%s/../bnig_present.txt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/thoe_missing_go" % (options.base_dir), -9, -9)
+#        utils.og_list_termfinder("%s/../thoe_missing.txt" % (options.base_dir), "%s/../bnig_present.txt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/thoe_missing_go" % (options.base_dir), -9, -9)
+#        utils.og_list_termfinder("%s/12bees_min10_gb.txt" % (options.base_dir), "%s/12bees_min10_gb.txt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/rer_0.01_slower_go" % (options.base_dir), 3, 0.01)
+#        utils.og_list_termfinder("%s/12bees_min10_gb_cut0.001_bumble_advanced.txt" % (options.base_dir), "%s/12bees_min10_gb_cut0.001_bumble_advanced.txt" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/rer_0.05_bumble_advanced_faster_go" % (options.base_dir), 3, 0.05)
+#        utils.og_list_termfinder("%s/acacias_gb_cut0.001.txt_noNAs" % (options.base_dir), "%s/acacias_gb_cut0.001.txt_noNAs" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/rer_0.05_mutualism_slower_go_noNAs" % (options.base_dir), 3, 0.05)
+        utils.og_list_termfinder("%s/leafs_medium_gb_cut0.001.txt_noNAs" % (options.base_dir), "%s/leafs_medium_gb_cut0.001.txt_noNAs" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/rer_0.05_medium_slower_go_noNAs" % (options.base_dir), 3, 0.05)
+#        utils.og_list_termfinder("%s/leafs_medium_gb_cut0.001.txt_noNAs" % (options.base_dir), "%s/leafs_medium_gb_cut0.001.txt_noNAs" % (options.base_dir),"%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/rer_0.05_medium_faster_go_noNAs" % (options.base_dir), 3, 0.05)
 
 
+        sys.exit()
+    if options.action == "rer_termfinder":
+        if not os.path.exists("%s/RER_termfinder" % options.base_dir):
+            os.mkdir("%s/RER_termfinder" % options.base_dir)
+        rerconverge_output = options.rerconverge_output
+        short_outputname = rerconverge_output.split("/")[-1][0:-4]
+        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
+        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
+        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "slow")
+        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "fast")
+        utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_all_go_%s" % (options.base_dir, short_outputname), 3, 0.01)
+        utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_all_go_%s" % (options.base_dir, short_outputname), 3, 0.05)
         sys.exit()
     if options.action == "gene_trees":
         constrained = True
@@ -124,15 +167,55 @@ def main():
         foreground = "aaml_blengths"
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        cur_og_list = utils.min_taxa_membership(ortho_dic, ["LOEN", "LVIE", "LFIG", "APUR"], og_list, 3)
+#        cur_og_list = utils.min_taxa_membership(ortho_dic, ["LOEN", "LVIE", "LFIG", "APUR", "HQUA", "LLEU"], og_list, 3)
 #        cur_og_list = [368]
-#        utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads)
-        phylo_dic = utils.read_aaml_phylos(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type))
+        cur_og_list = og_list
+        utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
+        phylo_dic = utils.read_aaml_phylos(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s" % (options.base_dir))
         fore_list = ["APUR", "LFIG", "LOEN", "LVIE", "LLEU"]
     #    fore_list = ["AAUR", "LMAR", "LPAU", "LZEP", "LMAL", "HLIG"]
         exclude_list = ["LCAL", "LALB", "HRUB", "NMEL", "DNOV", "AVIR"]
     #    utils.marine_test(phylo_dic, options.tree_file, fore_list, exclude_list, "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type))
 
+        sys.exit()
+    if options.action == "time_aamls":
+        paras_allowed = True
+        foreground = "aaml_blengths"
+        test_type = "aaml_blengths"
+        fore_list = options.foreground.split(",")
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+#        og_list = [6627]
+        utils.aaml_time_phylos(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_aaml_time_calibrated" % (options.base_dir, options.prefix), options.timetree, fore_list)
+        sys.exit()
+    if options.action == "hyphy_relax":
+        test_type = "RELAX"
+        paras_allowed = True
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        print len(og_list)
+        if options.foreground == "INTREE":
+            fore_list = "INTREE"
+            cur_og_list = og_list
+        else:
+            fore_list = options.foreground.split(",")
+            cur_og_list = utils.min_taxa_membership(ortho_dic, fore_list, og_list, 3)
+
+        print len(cur_og_list)
+        utils.paml_test(cur_og_list, fore_list, test_type, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
+        utils.read_hyphy_relax(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
+        sys.exit()
+        
+    if options.action == "rer_autism":
+        if not os.path.exists("%s/RER_autism" % options.base_dir):
+            os.mkdir("%s/RER_autism" % options.base_dir)
+        rerconverge_output = options.rerconverge_output
+        short_outputname = rerconverge_output.split("/")[-1][0:-4]
+        utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris.txt", rerconverge_output, ortho_dic, -9, 0.05, "fast", "%s/RER_autism/rer_0.05_faster_%s_allsfari.txt" % (options.base_dir, short_outputname))
+        utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris.txt", rerconverge_output, ortho_dic, -9, 0.05, "slow", "%s/RER_autism/rer_0.05_slower_%s_allsfari.txt" % (options.base_dir, short_outputname))
+        utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris.txt", rerconverge_output, ortho_dic, -9, 0.05, "all", "%s/RER_autism/rer_0.05_all_%s_allsfari.txt" % (options.base_dir, short_outputname))
+        for syndrome in ["1", "2", "3", "4", "5", "6", "empty", "S"]:
+            utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris_%s.txt" % syndrome, rerconverge_output, ortho_dic, -9, 0.05, "fast", "%s/RER_autism/rer_0.05_faster_%s_%ssfari.txt" % (options.base_dir, short_outputname, syndrome))
+            utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris_%s.txt" % syndrome, rerconverge_output, ortho_dic, -9, 0.05, "slow", "%s/RER_autism/rer_0.05_slower_%s_%ssfari.txt" % (options.base_dir, short_outputname, syndrome))
+            utils.rer_hypergeom("/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/AMEL/AMEL_sfaris_%s.txt" % syndrome, rerconverge_output, ortho_dic, -9, 0.05, "all", "%s/RER_autism/rer_0.05_all_%s_%ssfari.txt" % (options.base_dir, short_outputname, syndrome))
         sys.exit()
     if options.action == "autism_enrich":
 #        utils.hypergeom("/Genomics/kocherlab/berubin/annotation/autism/LALB_human_bestreciprocal.txt", "/Genomics/kocherlab/berubin/annotation/autism/LALB_sfaris.txt", "%s/%s_free_free_results/soc_larger.txt" % (options.base_dir, options.prefix), ortho_dic)

@@ -78,7 +78,9 @@ def branch_site_worker(orthogroup, workingdir):
     cml.print_options()
     cml.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/codeml", verbose = False)
 
-def free_ratios_worker(orthogroup, workingdir):
+def free_ratios_worker(param_list):
+    orthogroup = param_list[0]
+    workingdir = param_list[1]
     cml = codeml.Codeml(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), tree = "%s/og_%s.tree" % (workingdir, orthogroup), out_file = "%s/og_%s.alt" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
     cml.set_options(runmode=0,fix_blength=0,seqtype=1,CodonFreq=2, model=1, icode=0, clock = 0, aaDist=0, Mgene = 0, fix_kappa = 0, kappa = 2, fix_omega = 0, omega = 1, getSE = 0, RateAncestor = 0, cleandata = 0, Small_Diff = .45e-6, verbose = True)
     cml.set_options(NSsites=[0])
@@ -97,10 +99,12 @@ def ancestor_reconstruction(orthogroup, workingdir):
 def pairwise_yn(orthogroup, workingdir):
     yn = yn00.Yn00(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), out_file = "%s/og_%s.nul" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
     yn.set_options(icode = 0, verbose = 0, weighting = 0, commonf3x4 = 0)
-    yn_results = yn.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/yn00", verbose = False)
+    yn_results = yn.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/yn00", verbose = True)
     return yn_results
 
-def aaml_worker(orthogroup, workingdir):
+def aaml_worker(param_list):
+    orthogroup = param_list[0]
+    workingdir = param_list[1]
     cml = codeml.Codeml(alignment = "%s/og_cds_%s.afa" % (workingdir, orthogroup), tree = "%s/og_%s.tree" % (workingdir, orthogroup), out_file = "%s/og_%s.alt" % (workingdir, orthogroup), working_dir = "%s/og_%s_working" % (workingdir, orthogroup))
     cml.set_options(runmode=0,fix_blength=0,seqtype=2,model=3, icode=0, clock = 0, aaDist=0, Mgene = 0, fix_kappa = 0, kappa = 2, fix_omega = 0, omega = 1, getSE = 0, RateAncestor = 0, cleandata = 0, Small_Diff = .45e-6, aaRatefile = "/Genomics/kocherlab/berubin/local/src/paml4.9e/dat/jones.dat", verbose = True)
     cml.set_options(NSsites=[0])
@@ -129,3 +133,11 @@ def encprime(gene_name, cds_seq, flank_seq, outdir):
             cur_line = line.split(" ")
             ncp = float(cur_line[2])
             return ncp
+
+def relax_worker(param_list):
+    orthogroup = param_list[0]
+    workingdir = param_list[1]
+    cmd = ["HYPHYMP", "CPU=1", "/usr/local/hyphy/2.3.11/lib/hyphy/TemplateBatchFiles/SelectionAnalyses/RELAX.bf", "Universal", "%s/og_cds_%s.afa" % (workingdir, orthogroup), "%s/og_%s.tree" % (workingdir, orthogroup), "foreground", "All"]
+    with open("%s/og_%s_relax_unlabeledback.txt" % (workingdir, orthogroup), 'w') as outfile:
+        subprocess.call(cmd, stdout = outfile)
+    outfile.close()
