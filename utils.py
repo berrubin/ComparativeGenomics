@@ -9,7 +9,7 @@ import multiprocessing
 from multiprocessing import Pool
 from potpour import Worker
 import copy
-#import vcf
+import vcf
 from Bio import SeqIO
 from Bio import Seq
 from Gene import Gene
@@ -70,6 +70,29 @@ def ortho_reader(orthofile):
         ortho_dic[counter] = gene_dic
         counter += 1
     return ortho_dic
+
+def orthomcl_reader(orthofile):
+    #returns dictionary of dictionaries of orthologous genes inferred by orthomcl. 
+    #Lower level dictionaries have keys of species codes and 
+    #values of lists of gene names. Upper level dictionaries have the
+    #OG index (line number in orthofile) as keys.
+    #species with paralogs are not included at all.
+    reader = open(orthofile, 'rU')
+    ortho_dic = {}
+    for line in reader:
+        gene_dic = {}
+        cur_line = line.split()
+        cur_og = int(cur_line[0].split("_")[1][:-1])
+        for gene in cur_line[1:]:
+            cur_species = gene.split("|")[1][0:4]
+            if cur_species not in gene_dic.keys():
+                gene_dic[cur_species] = []
+                
+            gene_dic[cur_species].append(gene.split("|")[1])
+            gene_dic[cur_species] = [",".join(gene_dic[cur_species])]
+        ortho_dic[cur_og] = gene_dic
+    return ortho_dic
+
 
 def get_og_num(query_gene, ortho_dic):
     species = query_gene[0:4]
@@ -562,7 +585,7 @@ def hka_worker(attribute_list):
     neighbor_dic = attribute_list[8]                                 
         
     print og_num
-    if not os.path.exists("%s/og_cds_%s.1.fas" % (align_dir, og_num)):
+    if not os.path.exists("%s/og_cds_%s.afa" % (align_dir, og_num)):
         return "OG_%s\tinsufficient_sampling\t" % og_num
     inpoly, outpoly, inseq, outseq, insample, outsample = gather_hka_data(in_gene, out_gene, seq_type)
     if len(inseq) < 50 or len(outseq) < 50:
@@ -1352,7 +1375,7 @@ def rename_tree(seqfile, outname, phylogeny_file):
     outfile.write(tree_str)
     outfile.close()
 
-def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks = True):
+def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks = True):
     #formats fasta and tree files for PAML analysis
     tree_prep = True
     terminals = False
@@ -1400,10 +1423,15 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     seq_dic = {}
     taxa_list = []
     for rec in reader:
+        seq_len = str(rec.seq).count("A") + str(rec.seq).count("T") + str(rec.seq).count("C") + str(rec.seq).count("G")
+        if seq_len <= 300:
+            continue
         seq_dic[rec.id] = str(rec.seq).upper()
         taxa_list.append(rec.id[0:4])
 #        if rec.id[0:4] == "SINV":
 #            seq_dic[rec.id] = remove_stops(str(rec.seq).upper())
+    if len(seq_dic) < min_taxa:
+        return "too short"
     if terminals:
         if foreground not in taxa_list:
             return False
@@ -2050,7 +2078,7 @@ def kendall_test(blength_dic, standard_dic, fore_list, exclude_list):
     for x in range(len(outgroup)):
         phen_list.append(0)
     u_val, p_val = scipy.stats.kendalltau(cor_list, phen_list)
-    return p_val, numpy.mean(ingroup), numpy.mean(outgroup)
+    return p_val, numpy.median(ingroup), numpy.median(outgroup)
 
         
 def get_blengths(og_phylo, full_tree):
@@ -2227,7 +2255,7 @@ def compare_nodes(node1, node2):
             return False
     return True
 
-def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads, use_gblocks):
+def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads, use_gblocks, min_taxa):
     #performs paml test on all OG's in list
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -2251,7 +2279,7 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
 #            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
             prep_paml_files(cur_og, indir, outdir, "ancestral", phylogeny_file, test_type, use_gblocks)
         elif test_type == "aaml_blengths":
-            prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, use_gblocks)
+            ifshort = prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, use_gblocks)
         elif test_type == "RELAX":
             if os.path.exists("%s/og_%s_relax_unlabeledback.txt" % (outdir, cur_og)):
                 finished = False
@@ -2268,7 +2296,8 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                 continue
 #        work_queue.put([cur_og, outdir])
 #        paml_tests.relax_worker([cur_og, outdir])
-        work_list.append([cur_og, outdir])
+        if ifshort != "too short":
+            work_list.append([cur_og, outdir])
     if test_type == "bs":
         pool.map_async(paml_tests.branch_site_worker, work_list).get(9999999)
     elif test_type == "branch":
@@ -2392,6 +2421,11 @@ def gblock(inalignment):
     cmd = ["/Genomics/kocherlab/berubin/local/src/Gblocks_0.91b/Gblocks", inalignment, "-t=c", "-b5=h"]
     subprocess.call(cmd)
 
+def trimal_automated(inalignment, outalignment):
+    #run gblocks on given file
+    cmd = ["/Genomics/kocherlab/berubin/local/src/trimal/source/trimal", "-automated1", "-in", inalignment, "-out", outalignment]
+    subprocess.call(cmd)
+
 def prank_align(og_list, indir, outdir, use_backbone, phylogeny_file, num_threads): 
     #run prank alignments
     if not os.path.isdir(outdir):
@@ -2485,6 +2519,7 @@ def fsa_align_worker(param_list):
     with open("%s/og_cds_%s.afa" % (outdir, og_num), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile, stderr = FNULL)
     gblock("%s/og_cds_%s.afa" % (outdir, og_num))
+    trimal_automated("%s/og_cds_%s.afa" % (outdir, og_num), "%s/og_cds_%s.afa.trimal" % (outdir, og_num))
     print "%s alignment complete" % og_num
     return
 
@@ -2497,26 +2532,26 @@ def gblock(inalignment):
 def get_bee_cds():
     #get dictionary containing CDS for all genomes
     seq_dic = {}
-    for species in ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB", "HQUA"]:
-        reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (species, species), format = 'fasta')
+    for species in ["AAUR", "APUR", "AVIR", "HLIG", "HQUA", "HRUB", "LALB", "LCAL", "LFIG", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "NMEL"]:
+        reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release_v2.1/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (species, species), format = 'fasta')
         seq_dic[species] = {}
         for rec in reader:
             seq_dic[species][rec.id] = str(rec.seq)
-    species = "LALB"
-    reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/LALB/LALB_v3/LALB/LALB_OGS_v1.0_longest_isoform.cds.fasta", format = 'fasta')
-    seq_dic["LALB"] = {}
-    for rec in reader:
-        seq_dic[species][rec.id] = str(rec.seq)
+#    species = "LALB"
+#    reader = SeqIO.parse("/Genomics/kocherlab/berubin/official_release/LALB/LALB_v3/LALB/LALB_OGS_v1.0_longest_isoform.cds.fasta", format = 'fasta')
+#    seq_dic["LALB"] = {}
+#    for rec in reader:
+#        seq_dic[species][rec.id] = str(rec.seq)
     reader = SeqIO.parse("/Genomics/kocherlab/berubin/annotation/reference_genomes/Dufourea_novaeangliae_v1.1.cds.fa", format = 'fasta')
     species = "Dnov"
     seq_dic[species] = {}
     for rec in reader:
         seq_dic[species][rec.id] = str(rec.seq)
-    reader = SeqIO.parse("/Genomics/kocherlab/berubin/data/nmel/Nmel_v1.0.cds.fa", format = 'fasta')
-    species = "Nmel"
-    seq_dic[species] = {}
-    for rec in reader:
-        seq_dic[species][rec.id] = str(rec.seq)
+#    reader = SeqIO.parse("/Genomics/kocherlab/berubin/data/nmel/Nmel_v1.0.cds.fa", format = 'fasta')
+#    species = "Nmel"
+#    seq_dic[species] = {}
+#    for rec in reader:
+#        seq_dic[species][rec.id] = str(rec.seq)
     reader = SeqIO.parse("/Genomics/kocherlab/berubin/data/mgen/Mgen_v1.0.cds.fa", format = 'fasta')
     species = "Mgen"
     seq_dic[species] = {}
@@ -2637,6 +2672,71 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
         counter += 1
     ref_file.close()
 
+def write_orthomcls(ortho_dic, seq_dic, paras_allowed, outdir, indexfile, min_taxa):
+    #read/parse orthology file and write files containing all sequences.
+    #also create an index file that lists the number of taxa in each OG.
+    #writes OG's with paralogs in them but just doesn't write sequences
+    #from the species with the paralogs.
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    if not os.path.isdir(outdir + "_prots"):
+        os.mkdir(outdir + "_prots")
+#    for og, gene_list in ortho_dic.items():
+        
+    ref_file = open(indexfile, 'w')
+    ref_file.write("#og\tnum_taxa\tdummy\n")
+    counter = 0
+#    reader = open(ortho_file, 'rU')
+    noparas_ortho_dic = {}
+    for og, gene_dic in ortho_dic.items():
+        noparas_ortho_dic[og] = {}
+        for cur_species, genes in gene_dic.items():
+            if "," not in genes[0]:
+                noparas_ortho_dic[og][cur_species] = genes[0]
+    for og, gene_dic in noparas_ortho_dic.items():
+#        print og
+#        print gene_dic
+        if len(gene_dic.keys()) < min_taxa:
+            continue
+        ref_file.write("%s\t%s\t0\n" % (og, len(gene_dic.keys())))
+        outfile = open("%s/og_cds_%s.fa" % (outdir, og), 'w')
+        protfile = open("%s_prots/og_cds_%s.faa" % (outdir, og), 'w')
+        
+        for cur_species, genes in gene_dic.items():
+#            print genes
+#                cur_species = gene[0:4]
+            outfile.write(">%s\n%s\n" % (genes, seq_dic[cur_species][genes].upper()))
+            protfile.write(">%s\n%s\n" % (genes, str(Seq.Seq(seq_dic[cur_species][genes].upper()).translate())))
+        outfile.close()
+        protfile.close()
+            
+#     for line in reader:
+#         if line.startswith("#"):
+#             continue
+#         cur_line = line.split()
+#         cur_og = int(cur_line[0].split("_")[1][:-1])
+# #        num_paras = int(cur_line[1]) - int(cur_line[0])
+# #        if int(cur_line[0]) != int(cur_line[1]):
+# #            if not paras_allowed:
+# #                continue
+#         genes_list = []
+#         for seqs in cur_line[1:]:
+#             if "*" in seqs:
+#                 continue
+#             if "," in seqs:
+#                 continue
+#             cur_seqs = seqs.split(",")
+#             for seq in cur_seqs:
+#                 genes_list.append(seq)
+#                 cur_species = seq[0:4]
+#                 outfile.write(">%s\n%s\n" % (seq, seq_dic[cur_species][seq].upper()))
+#                 protfile.write(">%s\n%s\n" % (seq, str(Seq.Seq(seq_dic[cur_species][seq].upper()).translate())))
+#         ref_file.write("%s\t%s\t%s\t%s\n" % (counter, cur_line[0], num_paras, "\t".join(genes_list)))
+#         outfile.close()
+#         counter += 1
+#     ref_file.close()
+
+
 def concatenate_for_raxml(input_dir, outfile, og_list, species_list):
     #take directory of alignments and concatenate them all into a
     #RAxML formatted fasta file
@@ -2654,7 +2754,8 @@ def concatenate_for_raxml(input_dir, outfile, og_list, species_list):
     seq_len = 0
     seq_count = 0
     for og in og_list:
-        alignment = "%s/og_cds_%s.afa-gb" % (input_dir, og)
+#        alignment = "%s/og_cds_%s.afa-gb" % (input_dir, og)
+        alignment = "%s/og_cds_%s.afa.trimal" % (input_dir, og)
 #    for alignment in glob("%s/*.afa-gb" % input_dir):
         reader = SeqIO.parse(alignment, format = 'fasta')
         for rec in reader:
@@ -3344,7 +3445,11 @@ def rer_hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, o
         og_index = open("%s_og_index" % population_file, 'w')
         for line in reader:
             cur_gene = line.split()[0]
-            cur_og = int(get_og_num(cur_gene.split("-")[0], ortho_dic))
+
+            if cur_gene.startswith("LALB"):
+                cur_og = int(get_og_num(cur_gene, ortho_dic))
+            else:
+                cur_og = int(get_og_num(cur_gene.split("-")[0], ortho_dic))
             if cur_og:
                 pop_list.append(cur_og)
                 gene_og_dic[cur_gene] = cur_og
@@ -3360,6 +3465,7 @@ def rer_hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, o
             pop_cond_list.append(gene_og_dic[cur_gene])
     reader = open(subset_file, 'rU')
     subset_list = []
+    tested_ogs = []
     for line in reader:
         if outlier_num > 0:
             if len(subset_list) > outlier_num:
@@ -3378,6 +3484,7 @@ def rer_hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, o
             cur_og = int(line.split()[0].split("OG_")[1])
         else:
             cur_og = int(line.split()[0])
+        tested_ogs.append(cur_og)
         if cur_og in pop_list:
             cur_line = line.split()
             if float(cur_line[-1]) < pcut:
@@ -3397,16 +3504,30 @@ def rer_hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, o
     for sub in subset_list:
         if sub in pop_cond_list:
             subset_cond_list.append(sub)
+    tested_pop_list = []
+    tested_pop_cond_list = []
+    for tested_og in tested_ogs:
+        if tested_og in pop_list:
+            tested_pop_list.append(tested_og)
+        if tested_og in pop_cond_list:
+            tested_pop_cond_list.append(tested_og)
+        
     outtie = open(outfile, 'w')
-    outtie.write("Total population: %s\n" % len(pop_list))
-    outtie.write("Total population with condition: %s\n" % len(pop_cond_list))
+    # outtie.write("Total population: %s\n" % len(pop_list))
+    # outtie.write("Total population with condition: %s\n" % len(pop_cond_list))
+    # outtie.write("Subset of population: %s\n" % len(subset_list))
+    # outtie.write("Subset with condition: %s\n" % len(subset_cond_list))
+    # outtie.write("Probability this many or more: %s\n" % scipy.stats.hypergeom.sf(len(subset_cond_list)-1, len(pop_list), len(pop_cond_list), len(subset_list)))
+    # outtie.write("Probability this many or fewer: %s\n" % scipy.stats.hypergeom.cdf(len(subset_cond_list)+1, len(pop_list), len(pop_cond_list), len(subset_list)))
+    # outtie.close()
+    outtie.write("Total population: %s\n" % len(tested_pop_list))
+    outtie.write("Total population with condition: %s\n" % len(tested_pop_cond_list))
     outtie.write("Subset of population: %s\n" % len(subset_list))
     outtie.write("Subset with condition: %s\n" % len(subset_cond_list))
-    outtie.write("Probability this many or more: %s\n" % scipy.stats.hypergeom.sf(len(subset_cond_list)-1, len(pop_list), len(pop_cond_list), len(subset_list)))
-    outtie.write("Probability this many or fewer: %s\n" % scipy.stats.hypergeom.cdf(len(subset_cond_list)+1, len(pop_list), len(pop_cond_list), len(subset_list)))
+    outtie.write("Probability this many or more: %s\n" % scipy.stats.hypergeom.sf(len(subset_cond_list)-1, len(tested_pop_list), len(tested_pop_cond_list), len(subset_list)))
+    outtie.write("Probability this many or fewer: %s\n" % scipy.stats.hypergeom.cdf(len(subset_cond_list)+1, len(tested_pop_list), len(tested_pop_cond_list), len(subset_list)))
     outtie.close()
-#    print subset_cond_list
-    
+
 
 def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
 #    reader = open(backfile, 'rU')
@@ -3421,44 +3542,81 @@ def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
     good_backs = []
     for line in reader:
         if int(line.split()[1]) in backlist:
-            testing_db.write(line)
+#        if line.split()[1] in backlist:
+            #go termfinder fails when an OG is named "0"
+            testing_db.write(line.replace("\t0\t0\t", "\t9999999\t9999999\t"))
             if int(line.split()[1]) not in good_backs:
+#            if line.split()[1] not in good_backs:
                 good_backs.append(int(line.split()[1]))
+#                good_backs.append(line.split()[1])
     testing_db.close()
 
     fore_file = open("%s/forelist.txt" % (go_dir), 'w')
     for og_num in forelist:
         if og_num in good_backs:
-            fore_file.write("%s\n" % (og_num))
+            if og_num == 0:
+                fore_file.write("9999999\n")
+            else:
+                fore_file.write("%s\n" % (og_num))
     fore_file.close()
-    cmd = ["/Genomics/kocherlab/berubin/local/src/GO-TermFinder-0.86/examples/analyze.pl", "%s/testing_db.gaf" % go_dir, str(len(good_backs)), "/Genomics/kocherlab/berubin/annotation/interproscan/go-basic.obo", "%s/forelist.txt" % (go_dir)]
+#    cmd = ["/Genomics/kocherlab/berubin/local/src/GO-TermFinder-0.86/examples/analyze.pl", "%s/testing_db.gaf" % go_dir, str(len(good_backs)), "/Genomics/kocherlab/berubin/annotation/interproscan/go-basic.obo", "%s/forelist.txt" % (go_dir)]
+    cmd = ["/Genomics/kocherlab/berubin/local/src/GO-TermFinder-0.86/examples/analyze.pl", "%s/testing_db.gaf" % go_dir, str(len(good_backs)), "/Genomics/kocherlab/berubin/annotation/trinotate/go-basic_7_24_18.obo", "%s/forelist.txt" % (go_dir)]
+    print cmd
     subprocess.call(cmd)
     reader = open("%s/forelist.txt.terms" % (go_dir), 'rU')
     cp_file = open("%s.txt" % go_dir, 'w')
+    pval_file = open("%s_ps.txt" % go_dir, 'w')
     inog = False
     readogs = False
-    seq_dic = get_prot_seqs()
+    p_dic = {}
+    uncorp_dic = {}
+    frac_dic = {}
+    term_dic = {}
+#    seq_dic = get_prot_seqs()
     for line in reader:
         cp_file.write(line)
         if line.startswith("GOID"):
             cur_go = line.split()[1].replace(":", "_").strip()
             inog = True
+        if line.startswith("TERM"):
+            cur_term = line.strip().split("\t")[1]
+            term_dic[cur_go] = cur_term
+        if line.startswith("CORRECTED P-VALUE"):
+            if "P" not in line.strip().split()[-1]:
+                p_dic[cur_go] = float(line.strip().split()[-1])
+            else:
+                p_dic[cur_go] = 1.0
+        if line.startswith("UNCORRECTED P-VALUE"):
+            uncorp_dic[cur_go] = float(line.strip().split()[-1])
+
+        if line.startswith("NUM_ANNOTATIONS"):
+            cur_line = line.split()
+            inhits = float(cur_line[1])
+            inback = float(cur_line[3])
+            outhits = float(cur_line[8])
+            outback = float(cur_line[10])
+            frac_line = "%s\t%s\t%s\t%s\t%s\t%s" % (inhits, inback, outhits, outback, round(inhits/inback, 4), round(outhits/outback, 4))
+            frac_dic[cur_go] = frac_line
         if "The genes annotated to this node are:" in line:
             readogs = True
             continue
         if inog and readogs:
-            cur_line = line.strip().split(", ")
-            outfile = open("%s/%s.fasta" % (go_dir, cur_go), 'w')
-            for og in cur_line:
-                for species in ["AAUR", "LCAL", "LLEU", "LMAL", "HLIG", "HRUB", "APUR", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AVIR"]:
-                    if species in ortho_dic[int(og)]:
-                        og_seq = seq_dic[species][ortho_dic[int(og)][species][0]]
-                        outfile.write(">%s\n%s\n" % (og, og_seq))
-                        break
-            outfile.close()
+            # cur_line = line.strip().split(", ")
+            # outfile = open("%s/%s.fasta" % (go_dir, cur_go), 'w')
+            # for og in cur_line:
+            #     for species in ["AAUR", "LCAL", "LLEU", "LMAL", "HLIG", "HRUB", "APUR", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AVIR"]:
+            #         if species in ortho_dic[int(og)] and "," not in ortho_dic[int(og)][species][0]:
+            #             og_seq = seq_dic[species][ortho_dic[int(og)][species][0]]
+            #             outfile.write(">%s\n%s\n" % (og, og_seq))
+            #             break
+            # outfile.close()
             readogs = False
             inog = False
     cp_file.close()
+    sorted_ps = sorted(p_dic.items(), key = lambda x: x[1])
+    for go_ps in sorted_ps:
+        pval_file.write("%s\t%s\t%s\t%s\t%s\n" % (go_ps[0].replace("_", ":"), round(uncorp_dic[go_ps[0]], 8), round(go_ps[1],8), frac_dic[go_ps[0]], term_dic[go_ps[0]]))
+    pval_file.close()
         
 def rer_termfinder(forefile, backfile, database_file, ortho_dic, go_dir, sig_column, sig_cutoff, fast_or_slow):
     fore_list = rer_external_list(forefile, int(sig_column), float(sig_cutoff), fast_or_slow)
@@ -3525,9 +3683,10 @@ def external_list(forefile, sig_column, sig_cutoff):
         else:
             if line.startswith("OG_"):
                 fore_list.append(int(line.strip().split()[0][3:]))
+            elif line.startswith("GB"):
+                fore_list.append(line.strip().split()[0])
             else:
                 fore_list.append(int(line.strip().split()[0]))
-
     return fore_list
                        
 def og_list_termfinder(forefile, backfile, database_file, ortho_dic, go_dir, sig_column, sig_cutoff):
