@@ -365,6 +365,8 @@ class Gene:
                     nsyn_count += 1
                     continue
                 variant_len = len(self.alts[index])
+                #########TODO: Do unit tests of all lengths of alts genotypes at all locations within codons (1-3). Many of these have been done but should do systematically.
+#                print self.alts[index]
                 if self.strand == 1:
                     cds_index = self.cds.keys().index(index)
 
@@ -388,13 +390,24 @@ class Gene:
                     new_codon = Seq.Seq("".join(new_codon))
 
                 elif self.strand == -1:
-                    cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index)
+#                    print self.cds
+
+                    cds_index = len(self.cds.keys()) - 1 - self.cds.keys().index(index) + 1 - (variant_len % 3)
+
+#                    print index
+#                    print len(self.cds.keys())
+#                    print self.refs[index]
+#                    print variant_len
+#                    print index
+#                    print len(self.cds.keys())
+#                    print self.cds.keys().index(index)
                     if cds_index - variant_len < 0:
                         variant_len = cds_index
                         self.alts[index] = str(self.alts[index])[0:variant_len]
                     codon_start = len(self.cds.keys()) - 1 - cds_index + (cds_index % 3) + ((variant_len / 3) * 3)
-
+#                    codon_start = 
                     leftover_len = variant_len - (3 - cds_index % 3)
+#                    print "leftover: %s" % leftover_len
                     additional_len = 3 * (leftover_len / 3)
                     if leftover_len % 3 > 0:
                         additional_len += 3
@@ -406,7 +419,16 @@ class Gene:
                         old_codon += self.cds[new_index]
                         new_codon.append(self.cds[new_index])
                     for x in range(variant_len):
+#                        print new_codon
+#                        print cds_index
+#                        print codon_start
+#                        print cds_index % 3
+#                        print x
+#                        print str(self.alts[index])[variant_len + x - 1]
                         new_codon[cds_index % 3 + x] = str(self.alts[index])[variant_len - x - 1]
+####the following line is trash. Was an attempted fix for an indexing problem but it did not work across situations
+#                        new_codon[(cds_index - variant_len + 1) % 3 + x] = str(self.alts[index])[variant_len - x - 1]
+#                        print new_codon
                     old_codon = Seq.Seq(old_codon).complement()
                     new_codon = Seq.Seq("".join(new_codon)).complement()
                 old_aa = str(old_codon.translate())
@@ -415,11 +437,22 @@ class Gene:
                     fourfold_count += 1
                     fourf_coords.append(index)
                 temp_nsyn = 0
+#                print codon_start
+#                print cds_index
+#                print old_aa
+#                print str(old_codon)
+#                print new_aa
+#                print str(new_codon)
+#                print variant_len
                 for aa in range(len(new_aa)):
                     if old_aa[aa] != new_aa[aa]:
                         nsyn_count += 1
                         nsyn_coords.append(index)
                         temp_nsyn += 1
+#                        print index
+#                        print old_aa[aa]
+#                        print new_aa[aa]
+
                 temp_syn = 0
                 for nuc in range(len(str(new_codon))):
                     if str(old_codon)[nuc] != str(new_codon)[nuc]:
@@ -430,6 +463,12 @@ class Gene:
         self.syn_count = syn_count
         self.nsyn_count = nsyn_count
         self.fourfold = fourfold_count
+#        print nsyn_coords
+#        print syn_coords
+#        print len(nsyn_coords)
+#        print len(syn_coords)
+#        print nsyn_count
+#        print syn_count
 #        self.syn_coords = syn_coords
 #        self.nsyn_coords = nsyn_coords
 #        self.fourf_coords = fourf_coords
