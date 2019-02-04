@@ -25,6 +25,14 @@ parser.add_option("-g", "--no_gblocks", dest = "use_gblocks", action = "store_fa
 parser.add_option("-c", "--foreground", dest = "foreground", type = str, default = "", help = "Foreground taxa for selection test")
 parser.add_option("-d", "--param_file", dest = "param_file", type = str, default = "/Genomics/kocherlab/berubin/comparative/halictids/halictids.params")
 parser.add_option("-j", "--rerconverge_output", dest = "rerconverge_output", type = "str", default = "", help = "Output file from RERconverge")
+parser.add_option("-w", "--orthofile_format", dest = "orthofile_format", type = "str", default = "orthofinder", help = "Format of orthofile.")
+parser.add_option("--nogap_min_count", dest = "nogap_min_count", type = int, default = 8, help = "The minimum number of sequences in an alignment that are not gaps in an individual column.")
+parser.add_option("--nogap_min_prop", dest = "nogap_min_prop", type = float, default = 0.3, help = "The minimum proportion of sequences in an alignment that are not gaps in an individual column.")
+parser.add_option("--nogap_min_species", dest = "nogap_min_species", type = int, default = 4, help = "The minimum number of species in an alignment that are not gaps in an individual column.")
+parser.add_option("--min_seq_prop_kept", dest = "min_seq_prop_kept", type = float, default = 0.5, help = "The minimum fraction of a sequence that has to remain after every filtering step in order to keep that sequence in the alignment.")
+parser.add_option("--max_seq_prop_gap", dest = "max_seq_prop_gap", type = float, default = 0.5, help = "The maximum fraction of a sequence that is gap characters. Otherwise that sequence is discarded from the alignment.")
+parser.add_option("--min_cds_len", dest = "min_cds_len", type = int, default = 300, help = "The minimum length of a coding sequence to keep.")
+
 (options, args) = parser.parse_args()
 
 STOP_CODONS = ["TAA", "TAG", "TGA"]
@@ -33,6 +41,10 @@ SOCIAL = ["HLIG","LMAL", "LMAR", "LPAU", "LZEP", "AAUR", "LCAL", "LALB"]
 REV_SOLITARY = ["APUR", "LLEU", "LOEN", "LVIE", "LFIG"]
 ANC_SOLITARY = ["Nmel", "Dnov"]
 POLYMORPHIC = ["LCAL", "LALB"]
+HALICTUS = ["HRUB", "HQUA", "HLIG"]
+AUGOCHLORINES = ["AAUR", "APUR", "MGEN"]
+LASIOGLOSSUM = ["LLEU", "LMAR", "LFIG", "LZEP", "LVIE", "LALB", "LCAL", "LMAL", "LPAU", "LOEN"]
+ANC_SOLITARY = ["DNOV", "NMEL", "AVIR"]
 
 def main():
     cds_dic = utils.read_params(options.param_file)
@@ -40,8 +52,12 @@ def main():
     if not os.path.isdir(options.base_dir):
         os.mkdir(options.base_dir)     #create working directory
 #    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-    ortho_dic = utils.orthomcl_reader(options.ortho_file)
-#    ortho_dic = utils.ortho_reader(options.ortho_file)
+    if options.orthofile_format == "orthofinder":
+        ortho_dic = utils.orthofinder_reader(options.ortho_file)
+    elif options.orthofile_format == "orthomcl":
+        ortho_dic = utils.orthomcl_reader(options.ortho_file)
+    else:
+        ortho_dic = utils.ortho_reader(options.ortho_file)
     index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
     if options.action == "mk":
         utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
@@ -62,22 +78,34 @@ def main():
         gaf_file = "/Genomics/kocherlab/berubin/annotation/hic/trinotate/LALB/LALB.gaf"
         utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s" % (options.base_dir, options.prefix), gaf_file)
         sys.exit()
+
+###Align coding sequences and concatenate all protein sequences into 
+###an aligned matrix that can be input into RAxML to make a phylogeny.
     if options.action == "align_coding":
-        paras_allowed = True #because of the way that write_orthos works
-        #this just allows OG's to be aligned even if they initially include
-        #paralogs because the paralogous sequences are excluded 
-        #in write_orthos
+        paras_allowed = True 
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
         iscoding = True
-#        target_taxa = ["AMEL"]
-#        cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
-#        cur_og_list = [368]
         cur_og_list = og_list
         utils.fsa_coding_align(cur_og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.num_threads, iscoding)
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
         og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed)
         utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
         sys.exit()
+
+    if options.action == "alignment_filter":
+        paras_allowed = True
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        og_list = range(12375,12387) #[12544]
+        min_taxa_dic = {1:HALICTUS, 1:AUGOCHLORINES, 1:ANC_SOLITARY, 1:LASIOGLOSSUM}
+        utils.alignment_column_filtering("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
+        print "column filtering done"
+        utils.jarvis_filtering(og_list, "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), options.min_cds_len, options.num_threads)
+        print "jarvis filtering done"
+        utils.alignment_column_filtering("%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
+        print "column filtering done"
+        utils.sequence_gap_filtering("%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt" % (options.base_dir, options.prefix), "%s/%s_orthos" % (options.base_dir, options.prefix), og_list, options.min_seq_prop_kept, options.max_seq_prop_gap, options.min_cds_len, "%s/%s_filtered.index" % (options.base_dir, options.prefix))
+        print "sequence filtering done"
+        sys.exit()
+
     if options.action == "write_orthos":
 
 #        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/gilliamella/renamed_cds_seqs")
@@ -91,13 +119,13 @@ def main():
         seq_dic = utils.get_cds_files(cds_dic)
         #write fastas for ALL orthologous groups
 #        utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
-        utils.write_orthomcls(ortho_dic, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file, options.min_taxa)
+        utils.write_orthoparagroups(ortho_dic, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file, options.min_taxa)
         sys.exit()
     if options.action == "yn_dnds":
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
 
-        utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file)
+        utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file, options.min_taxa, options.use_gblocks)
         sys.exit()
     if options.action == "gc_content":
         if not os.path.isdir("%s/%s_gc_content" % (options.base_dir, options.prefix)):
@@ -124,9 +152,12 @@ def main():
         sys.exit()
     if options.action == "termfinder":
 #        for species in ["AFLO", "AMEL", "MQUA", "MQUA_apis"]:
+        for species in ["BIMP", "BTER"]:
 #            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/%s_out_advanced_slow.txt" % (species), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/%s_out_advanced_back.txt" % (species), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_leaveoneout/%s_out_advanced_slow_go" % (options.base_dir, species), -9, -9)
 #            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/%s_out_advanced_fast.txt" % (species), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/%s_out_advanced_back.txt" % (species), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_leaveoneout/%s_out_advanced_fast_go" % (options.base_dir, species), -9, -9)
-#        sys.exit()
+            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/apis_%s_fast.txt" % (species), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/apis_%s_back.txt" % (species), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_leaveoneout/apis_%s_fast_go" % (options.base_dir, species), -9, -9)
+            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/apis_%s_slow.txt" % (species), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/leaveoneout/apis_%s_back.txt" % (species), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_leaveoneout/apis_%s_slow_go" % (options.base_dir, species), -9, -9)
+        sys.exit()
         for index in range(0,100):
 #            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/random_advanced_rers_genes/random_fore_rers_%s_fast.txt" % (index), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/random_advanced_rers_genes/random_fore_rers_%s_back.txt" % (index), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_advanced_random_termfinder/random_fore_rers_%s_fast_go" % (options.base_dir, index), -9, -9)
 #            utils.og_list_termfinder("/Genomics/kocherlab/berubin/alignment/10bees/revisions/random_advanced_rers_genes/random_fore_rers_%s_slow.txt" % (index), "/Genomics/kocherlab/berubin/alignment/10bees/revisions/random_advanced_rers_genes/random_fore_rers_%s_back.txt" % (index), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/noncoding_advanced_random_termfinder/random_fore_rers_%s_slow_go" % (options.base_dir, index), -9, -9)

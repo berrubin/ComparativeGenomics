@@ -19,6 +19,7 @@ class Gene:
         self.species = gene_name[0:4]
         self.alts = {}
         self.refs = {}
+        self.sample_gts = {}
         self.fourfold = -1
         self.syn_count = -1 #PS
         self.nsyn_count = -1 #PR
@@ -48,6 +49,10 @@ class Gene:
         self.nsyn_coords = []
         self.fourf_coords = []
         self.flank_sub_coords = []
+        self.sample_nsyn_counts = {}
+        self.sample_syn_counts = {}
+        self.sample_nsyn_genod = {}
+        self.sample_syn_genod = {}
  
     def get_new_coord(self, aligned_seq, old_coord):
         new_coord = old_coord
@@ -457,7 +462,8 @@ class Gene:
                 for nuc in range(len(str(new_codon))):
                     if str(old_codon)[nuc] != str(new_codon)[nuc]:
                         syn_count += 1
-                        syn_coords.append(index)
+                        if index not in nsyn_coords:
+                            syn_coords.append(index)
                         temp_syn 
                 syn_count = syn_count - temp_nsyn
         self.syn_count = syn_count
@@ -469,8 +475,8 @@ class Gene:
 #        print len(syn_coords)
 #        print nsyn_count
 #        print syn_count
-#        self.syn_coords = syn_coords
-#        self.nsyn_coords = nsyn_coords
+        self.syn_coords = syn_coords
+        self.nsyn_coords = nsyn_coords
 #        self.fourf_coords = fourf_coords
 
 
@@ -513,7 +519,7 @@ class Gene:
             self.potential_sites()
             return
         scaf_len = vcf_reader.contigs[self.scaf][1]
-            
+        gene_sample_dic = {}
         for rec in reader: 
             if rec.num_called < 4:
                 continue
@@ -533,6 +539,10 @@ class Gene:
                 alt_dic[rec.POS] = rec.ALT[0]
                 ref_dic[rec.POS] = rec.REF
                 called_count[rec.POS] = rec.num_called
+                gene_sample_dic[rec.POS] = {}
+                for s in rec.samples:
+                    gene_sample_dic[rec.POS][s.sample] = s['GT']
+
         #if you need exact counts of sample numbers, use this
 #        self.called_counts = called_count
         if len(called_count.values()) == 0:
@@ -543,7 +553,9 @@ class Gene:
             self.average_n = round(1.0 * sum(called_count.values()) / len(self.sequence))
         self.alts = alt_dic
         self.refs = ref_dic
+        self.sample_gts = gene_sample_dic
         self.syn_and_nsyn()
+        self.syn_nsyn_by_sample()
         self.potential_sites()
         self.noncoding_subs()
         #reduce memory usage
@@ -554,6 +566,38 @@ class Gene:
         self.intron_dic = {}
         self.sequence = {}
 
+    def syn_nsyn_by_sample(self):
+        #These are the numbers of polymorphic sites where individuals are heterozygous
+        sample_nsyn_counts = {}
+        sample_syn_counts = {}
+        #Below are the numbers of polymorphic sites where an individual has been genotyped
+        sample_nsyn_genod = {}
+        sample_syn_genod = {}
+        for position, gt_dic in self.sample_gts.items():
+            if position in self.nsyn_coords:
+                for sample, gt in gt_dic.items():
+                    if sample_nsyn_counts.get(sample, None) == None:
+                        sample_nsyn_counts[sample] = 0
+                        sample_nsyn_genod[sample] = 0
+                    if gt in ["0/1", "1/0"]:
+                        sample_nsyn_counts[sample] += 1
+                    if gt in ["0/1", "1/0", "1/1", "0/0"]:
+                        sample_nsyn_genod[sample] += 1
+            elif position in self.syn_coords:
+                for sample, gt in gt_dic.items():
+                    if sample_syn_counts.get(sample, None) == None:
+                        sample_syn_counts[sample] = 0
+                        sample_syn_genod[sample] = 0
+                    if gt in ["0/1", "1/0"]:
+                        sample_syn_counts[sample] += 1
+                    if gt in ["0/1", "1/0", "1/1", "0/0"]:
+                        sample_syn_genod[sample] += 1
+        self.sample_nsyn_counts = sample_nsyn_counts
+        self.sample_syn_counts = sample_syn_counts
+        self.sample_nsyn_genod = sample_nsyn_genod
+        self.sample_syn_genod = sample_syn_genod
+#        print sample_nsyn_counts
+#        print sample_syn_counts
 
     def potential_sites(self):
         potent_dic = changes.potent_dic()
