@@ -7,7 +7,6 @@ import os
 import sys
 import changes
 from Bio.Align.Applications import MuscleCommandline
-from Bio.Align.Applications import MafftCommandline
 import multiprocessing
 from multiprocessing import Pool
 from potpour import Worker
@@ -18,7 +17,6 @@ from Bio import Seq
 from Gene import Gene
 from gff import gffParser
 import cPickle as pickle
-import os
 import shutil
 import subprocess
 from glob import glob
@@ -36,6 +34,14 @@ import scipy.stats
 
 STOP_CODONS = ["TGA", "TAA", "TAG"]
 
+def read_exec_paths(paths_file):
+    paths_dic = {}
+    reader = open(paths_file, 'rU')
+    for line in reader:
+        cur_line = line.split()
+        paths_dic[cur_line[0]] = cur_line[1]
+    return paths_dic
+
 def read_params(params_file):
     reader = open(params_file, 'rU')
     cds_dic = {}
@@ -43,6 +49,18 @@ def read_params(params_file):
         cur_line = line.split()
         cds_dic[cur_line[0]] = cur_line[1]
     return cds_dic
+
+def read_orthofile(orthoformat, ortho_file):
+    if orthoformat == "orthofinder":
+        ortho_dic = orthofinder_reader(ortho_file)
+    elif orthoformat == "orthomcl":
+        ortho_dic = orthomcl_reader(ortho_file)
+    elif orthoformat == "proteinortho":
+        ortho_dic = ortho_reader(ortho_file)
+    else:
+        print "Unknown orthogroup file format. Please specify orthofinder, orthomcl, or proteinortho format using the -w option."
+        sys.exit()
+    return ortho_dic
 
 def ortho_reader(orthofile):
     #returns dictionary of dictionaries of orthologos genes. 
@@ -52,7 +70,7 @@ def ortho_reader(orthofile):
     #species with paralogs are not included at all.
     reader = open(orthofile, 'rU')
     ortho_dic = {}
-    counter = 0
+    counter = 10000
     for line in reader:
         if line.startswith("#"):
             continue
@@ -63,8 +81,6 @@ def ortho_reader(orthofile):
         for gene in cur_line[3:]:
             if gene == "*":
                 continue
-#            if "," in gene:
-#                continue
             cur_species = gene[0:4]
             if cur_species not in gene_dic.keys():
                 gene_dic[cur_species] = []
@@ -112,7 +128,7 @@ def orthofinder_reader(orthofile):
         if len(cur_line) == 2:
             continue #skip orthogroups with a single sequence
         for gene in cur_line[1:]:
-            cur_species = gene[0:4]#.upper()
+            cur_species = gene[0:4]
             if cur_species not in gene_dic.keys():
                 gene_dic[cur_species] = []
                 
@@ -120,7 +136,6 @@ def orthofinder_reader(orthofile):
             gene_dic[cur_species] = [",".join(gene_dic[cur_species])]
         ortho_dic[cur_og] = gene_dic
     return ortho_dic
-
 
 def get_og_num(query_gene, ortho_dic):
     species = query_gene[0:4]
@@ -315,7 +330,6 @@ def harvest_worker(attribute_list):#gene_name, gene_dic, gff_file, seq_dic, targ
     cur_gene.get_first_intron_sequence()
     cur_gene.get_genotypes(vcf_reader, 5000)
     return cur_gene
-
         
 def cds_sequence_worker(gene):
     gene.get_cds_sequence()
@@ -1445,13 +1459,11 @@ def rename_tree(seqfile, outname, phylogeny_file):
     outfile.write(tree_str)
     outfile.close()
 
-def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks = True):
-
+def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa):
     #formats fasta and tree files for PAML analysis
     tree_prep = True
     terminals = False
     fore_list = []
-#    print foreground
     SOCIAL = ["HLIG","LMAL", "LMAR", "LPAU", "AAUR", "LZEP"]
     REV_SOLITARY = ["LLEU", "LOEN", "LVIE", "LFIG", "APUR", "HQUA"]
     if foreground in ["HLIG","LMAL", "LMAR", "LPAU", "AAUR", "LZEP", "LLEU", "LOEN", "LVIE", "LFIG", "APUR", "FNIG", "BNIG", "HQUA", "HRUB", "AVIR"]:
@@ -1468,7 +1480,6 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     elif "clade" in foreground:
         tree_prep = False
     elif isinstance(foreground, list):
-#        print foreground
         fore_list = foreground
     if use_gblocks:
         if foreground == "ancestral":
@@ -1494,20 +1505,13 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     seq_dic = {}
     taxa_list = []
     for rec in reader:
-        seq_len = str(rec.seq).count("A") + str(rec.seq).count("T") + str(rec.seq).count("C") + str(rec.seq).count("G")
-        if seq_len <= 300:
-            continue
-        seq_dic[rec.id] = str(rec.seq).upper()
-        taxa_list.append(rec.id[0:4])
-#        if rec.id[0:4] == "SINV":
-#            seq_dic[rec.id] = remove_stops(str(rec.seq).upper())
-    print orthogroup
-    print len(seq_dic)
-    print seq_dic.keys()
-    print min_taxa
-    if len(seq_dic) < min_taxa:
-        print orthogroup
-        return "too short"
+        if rec.id[0:4] not in exclude_taxa:
+ #           if rec.id[0:4] == "LMAR":
+            seq_dic[rec.id] = mask_selenocysteine(str(rec.seq).upper())
+            taxa_list.append(rec.id[0:4])
+#    if len(seq_dic) < min_taxa:
+#        print orthogroup
+#        return "too short"
     if terminals:
         if foreground not in taxa_list:
             return False
@@ -1522,17 +1526,12 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
         elif foreground == "free" or foreground == "yn":
             if str(Seq.Seq(sequence.replace("-", "N")).translate()).count("*") > 0:
                 outfile.close()
+                print "Too many stop codons in %s %s" % (species, orthogroup)
                 return False
             else:
                 outfile.write("%s\n%s\n" % (species[0:4], sequence))
         elif test_type == "RELAX":
             outfile.write(">%s\n%s\n" % (species[0:4], sequence))
-        # elif test_type == "yn" and len(seq_dic) > 3:
-        #     for species in ["TSEP", "TZET", "TCOR", "ACOL", "ACEP", "AECH"]:
-        #         sub_outfile = open("%s/og_cds_%s_%s.afa" % (outdir, orthogroup, species), 'w')
-        #         for included in ["SINV", "CCOS", species]:
-        #             sub_outfile.write(">%s\n%s\n" % (included, seq_dic[included]))
-        #         sub_outfile.close()
         else:
             outfile.write("%s\n%s\n" % (species[0:4], sequence))
     outfile.close()
@@ -1558,11 +1557,29 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
 #        shutil.copy("/Genomics/kocherlab/berubin/annotation/orthology/halictids_rough/lasioglossum.tree", "%s/og_%s.tree" % (outdir, orthogroup))
     elif foreground != "yn":
         shutil.copy("/Genomics/kocherlab/berubin/annotation/orthology/model_d.tree", "%s/og_%s.tree" % (outdir, orthogroup))
-    for seq1 in seq_dic.values():
-        for seq2 in seq_dic.values():
-            if align_len(seq1,seq2) < 100:
-                return False
+#    for seq1 in seq_dic.values():
+#        for seq2 in seq_dic.values():
+#            if align_len(seq1,seq2) < 100:
+#                return False
     return True
+
+def mask_selenocysteine(inseq):
+    index = 0
+    new_seq = []
+    while index < len(inseq):
+#        print Seq.Seq(inseq[index:index+3].replace("-","N")).translate()
+#        print Seq.Seq(inseq[index:index+3].replace("-","N"))
+        if inseq[index:index+3] == "TGA":
+            new_seq.append("NNN")
+        elif "N" in inseq[index:index+3]:
+            new_seq.append("NNN")
+        elif str(Seq.Seq(inseq[index:index+3].replace("-","N")).translate()) in ["J", "Z", "B"]:
+
+            new_seq.append("NNN")
+        else:
+            new_seq.append(inseq[index:index+3])
+        index += 3
+    return "".join(new_seq)
 
 def terminal_test_overlap(indir, prefix, test_type, target_taxa, soc_list, sol_list, pairs_list):
     sig_dic = {}
@@ -1940,14 +1957,14 @@ def read_frees(indir, outdir, database_file, ortho_dic, go_dir, get_dn_ds, time_
 #    run_termfinder(sol_list, background_ogs, database_file, ortho_dic, "%s_sol" % go_dir)
     sum_file.close()
 
-def read_aaml_phylos(og_list, indir, outdir, min_taxa):#, full_tree):
+def read_aaml_phylos(og_list, indir, outdir, outfile, min_taxa):#, full_tree):
     #reads free ratios files and gets dn/ds ratios
     #can be easily extended to get dn and ds but those are low quality
     soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
 
-    outfile = open("%s/compiled_aaml_phylos_min100.txt" % outdir, 'w')
+    outfile = open("%s/%s" % (outdir, outfile), 'w')
     og_phylo_dic = {}
     for cur_og in og_list:
         if not os.path.exists("%s/og_%s.alt" % (indir, cur_og)):
@@ -1965,8 +1982,8 @@ def read_aaml_phylos(og_list, indir, outdir, min_taxa):#, full_tree):
                 first_line = False
             if aa_tree:
                 aa = PhyloTree(line.strip().replace("#", ":"))
-                if len(aa.get_leaves()) < min_taxa:
-                    break
+#                if len(aa.get_leaves()) < min_taxa:
+#                    break
                 og_phylo_dic[cur_og] = aa
 
                 outfile.write("OG_%s\t%s\n" % (cur_og, aa.write(format = 5)))
@@ -1979,8 +1996,8 @@ def read_aaml_phylos(og_list, indir, outdir, min_taxa):#, full_tree):
                 line = og_file.readline()
                 aa_tree = True
                 continue
-            if seq_len < 100:
-                break
+#            if seq_len < 100:
+#                break
             line = og_file.readline()
             if not line:
                 break
@@ -2488,31 +2505,35 @@ def compare_nodes(node1, node2):
             return False
     return True
 
-def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads, use_gblocks, min_taxa):
+def results_exist(outdir, og_num):
+    if os.path.exists("%s/og_%s.alt" % (outdir, og_num)):
+        reader = open("%s/og_%s.alt" % (outdir, og_num), 'rU')
+        if "Time used:" in reader.readlines()[-1]:
+            return True
+    return False
+
+def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num_threads, use_gblocks, min_taxa, exclude_taxa):
     #performs paml test on all OG's in list
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
     og_file_list = []
-#    work_queue = multiprocessing.Queue()
-#    result_queue = multiprocessing.Qu0eue()
     pool = multiprocessing.Pool(processes = num_threads)
     work_list = []
     for cur_og in og_list:
-
+        if results_exist(outdir, cur_og):
+            continue
         if test_type == "model_d":
             prep_paml_files(cur_og, indir, outdir, "model_d", phylogeny_file, test_type, use_gblocks)
         elif test_type == "free":
             no_stops = prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file, test_type, min_taxa, use_gblocks)
             if not no_stops:
+                print "OG %s appears to have unexpected stop codons" % cur_og
                 continue
         elif test_type == "ancestral":
             cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
-#            if not os.path.exists("%s/OG_%s" % (outdir, cur_og)):
-#                os.mkdir("%s/OG_%s" % (outdir, cur_og))
-#            prep_paml_files(cur_og, indir, "%s/OG_%s" % (outdir, cur_og), "ancestral", phylogeny_file)
             prep_paml_files(cur_og, indir, outdir, "ancestral", phylogeny_file, test_type, min_taxa, use_gblocks)
         elif test_type == "aaml_blengths":
-            ifshort = prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, min_taxa, use_gblocks)
+            prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "RELAX":
             if os.path.exists("%s/og_%s_relax_unlabeledback.txt" % (outdir, cur_og)):
                 finished = False
@@ -2522,16 +2543,15 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                         finished = True
                 if finished:
                     continue
-            ifshort = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
+            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
         else:
             taxon_present = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
             if not taxon_present:
                 continue
             ifshort = taxon_present
-#        work_queue.put([cur_og, outdir])
-#        paml_tests.relax_worker([cur_og, outdir])
-        if ifshort != "too short":
-            work_list.append([cur_og, outdir])
+#        if ifshort != "too short":
+        work_list.append([cur_og, outdir])
+#        paml_tests.aaml_worker([cur_og, outdir])
     if test_type == "bs":
         pool.map_async(paml_tests.branch_site_worker, work_list).get(9999999)
     elif test_type == "branch":
@@ -2546,34 +2566,6 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
         pool.map_async(paml_tests.aaml_worker, work_list).get(9999999)
     elif test_type == "RELAX":
         pool.map_async(paml_tests.relax_worker, work_list).get(9999999)
-
-    # jobs = []
-    # for i in range(num_threads):
-    #     if test_type == "bs":
-    #         worker = Worker(work_queue, result_queue, paml_tests.branch_site_worker)
-    #     elif test_type == "branch":
-    #         worker = Worker(work_queue, result_queue, paml_tests.branch_worker)
-    #     elif test_type == "branchpos":
-    #         worker = Worker(work_queue, result_queue, paml_tests.branch_positive_worker)
-    #     elif test_type == "free":
-    #           worker = Worker(work_queue, result_queue, paml_tests.free_ratios_worker)          
-    #     elif test_type == "model_d":
-    #           worker = Worker(work_queue, result_queue, paml_tests.branch_site_d_worker)          
-    #     elif test_type == "ancestral":
-    #         worker = Worker(work_queue, result_queue, paml_tests.ancestor_reconstruction)  
-    #     elif test_type == "aaml_blengths":
-    #         worker = Worker(work_queue, result_queue, paml_tests.aaml_worker)  
-    #     elif test_type == "RELAX":
-    #         worker = Worker(work_queue, result_queue, paml_tests.relax_worker)
-    #     jobs.append(worker)
-    #     worker.start()
-    # try:
-    #     for j in jobs:
-    #         j.join()
-    # except KeyboardInterrupt:
-    #     for j in jobs:
-    #         j.terminate()
-    #         j.join()
     
 def count_sub_types(seq1, seq2):
     #counts syn and nsyn substitutions between two coding sequences
@@ -2656,7 +2648,7 @@ def gblock(inalignment):
     subprocess.call(cmd)
 
 def trimal_automated(inalignment, outalignment):
-    #run gblocks on given file
+    #run trimAl on given file
     cmd = ["/Genomics/kocherlab/berubin/local/src/trimal/source/trimal", "-automated1", "-in", inalignment, "-out", outalignment]
     subprocess.call(cmd)
 
@@ -2688,13 +2680,11 @@ def fsa_coding_align(og_list, indir, outdir, num_threads, iscoding):
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
     og_file_list = []
-#    work_queue = multiprocessing.Queue()
-#    result_queue = multiprocessing.Queue()
     pool = multiprocessing.Pool(processes = num_threads)
     work_list = []
     for og in og_list:
         already_done = False
-        if os.path.exists("%s/og_cds_%s.afa" % (outdir, og)):
+        if os.path.exists("%s/og_cds_%s.afa" % (outdir, og)): #check whether the alignment of this OG has already occurred. If so, it won't redo it. This is handy in case the orthogroup alignment crashes at some point.
             reader = SeqIO.parse("%s/og_cds_%s.afa" % (outdir, og), format = 'fasta')
             counter = 0
             for rec in reader:
@@ -2704,28 +2694,9 @@ def fsa_coding_align(og_list, indir, outdir, num_threads, iscoding):
                     break
         if not already_done:
             og_file = "%s/og_cds_%s.fa" % (indir, og)
-        
             work_list.append([og_file, outdir, iscoding])
-#        work_queue.put([og_file, outdir, iscoding])
-#    pool.map(fsa_align_worker, work_list)
     pool.map_async(fsa_align_worker, work_list).get(9999999)
-#    pool.close()
-#    pool.join()
-#    jobs = []
-#    for i in range(num_threads):
-#        worker = Worker(work_queue, result_queue, fsa_align_worker)
-#        jobs.append(worker)
-#        worker.start()
-#    try:
-#    for j in jobs:
-#        j.join()
-#    except KeyboardInterrupt:
-#        for j in jobs:
-#            j.terminate()
-#            j.join()
-    print "aligment complete"
 
-#def fsa_align_worker(og_file, outdir, iscoding):
 def fsa_align_worker(param_list):
     og_file = param_list[0]
     outdir = param_list[1]
@@ -2764,42 +2735,59 @@ def jarvis_filtering(og_list, indir, outdir, len_min, num_threads):
         os.mkdir(outdir)
     spotProblematicSeqsModules.jarvis_filter(og_list, indir, outdir, len_min, num_threads)
     
-def sequence_gap_filtering_worker(infile, originalfile, outfile, cur_og, min_seq_prop_kept, max_seq_prop_gap, min_seq_len):
+def sequence_gap_filtering_worker(infile, originalfile, noparafile, outfile, cur_og, min_seq_prop_kept, max_seq_prop_gap, min_seq_len):
     original_seqs = {}
     reader = SeqIO.parse(originalfile, format = 'fasta')
     for rec in reader:
         original_seqs[rec.id] = str(rec.seq)
     outhandle = open(outfile, 'w')
+    nopara_handle = open(noparafile, 'w')
     reader = SeqIO.parse(infile, format = 'fasta')
-    new_seq_list = []
+    seq_dic = {}
     for rec in reader:
-        cur_seq = str(rec.seq).replace("-","").replace("N", "")
+        seq_dic[rec.id] = str(rec.seq)
+    taxa_list = [seq[0:4] for seq in seq_dic.keys()]
+    new_seq_list = []
+    seqfilt_taxa = []
+    seqfilt_seqs = []
+    for seq_name, seq in seq_dic.items():
+        cur_seq = str(seq).replace("-","").replace("N", "")
         if len(cur_seq) >= min_seq_len: #check min_seq_len
-            if len(cur_seq) >= len(original_seqs[rec.id])*min_seq_prop_kept: #check that at least some fraction (min_seq_prop_kept) of the original sequence is retained in the filtered alignment
-                gap_count = str(rec.seq).count("-") + str(rec.seq).count("N")
-                if gap_count <= max_seq_prop_gap*len(rec.seq): #check that the sequences doesn't have more than some maximum fraction of gaps or unknown sequences (max_seq_prop_gap)
-                    outhandle.write(">%s\n%s\n" % (rec.id, str(rec.seq)))
-                    new_seq_list.append(rec.id)
+            if len(cur_seq) >= len(original_seqs[seq_name])*min_seq_prop_kept: #check that at least some fraction (min_seq_prop_kept) of the original sequence is retained in the filtered alignment
+                gap_count = str(seq).count("-") + str(seq).count("N")
+                if gap_count <= max_seq_prop_gap*len(seq): #check that the sequences doesn't have more than some maximum fraction of gaps or unknown sequences (max_seq_prop_gap)
+                    outhandle.write(">%s\n%s\n" % (seq_name, str(seq)))
+                    seqfilt_seqs.append(seq_name)
+                    seqfilt_taxa.append(seq_name[0:4])
+                    new_seq_list.append(seq_name)
     outhandle.close()
+    para_taxa = [taxa for taxa in seqfilt_taxa if seqfilt_taxa.count(taxa) > 1]
+    for seq_name in seqfilt_seqs:
+        if seq_name[0:4] not in para_taxa:
+            nopara_handle.write(">%s\n%s\n" % (seq_name, str(seq_dic[seq_name])))
+    nopara_handle.close()
     return new_seq_list
                 
 
-def sequence_gap_filtering(aligned_dir, filtered_dir, original_dir, og_list, min_seq_prop_kept, max_seq_prop_gap, min_seq_len, index_file):
+def sequence_gap_filtering(aligned_dir, filtered_dir, nopara_dir, original_dir, og_list, min_seq_prop_kept, max_seq_prop_gap, min_seq_len, index_file):
 ###Filter out individual sequences based on what fraction of the sequence is unknown or gaps. Also removes short sequences.
     if not os.path.isdir(filtered_dir):
         os.mkdir(filtered_dir)
+    if not os.path.isdir(nopara_dir):
+        os.mkdir(nopara_dir)
     index_handle = open(index_file, 'w')
     index_handle.write("#og\tnum_tax\tnum_seq\n")
     for cur_og in og_list:
         infile = "%s/og_cds_%s.afa" % (aligned_dir, cur_og)
         originalfile = "%s/og_cds_%s.fa" % (original_dir, cur_og)
         outfile = "%s/og_cds_%s.afa" % (filtered_dir, cur_og)
-        new_seq_list = sequence_gap_filtering_worker(infile, originalfile, outfile, cur_og, min_seq_prop_kept, max_seq_prop_gap, min_seq_len)
+        noparafile = "%s/og_cds_%s.afa" % (nopara_dir, cur_og)
+        new_seq_list = sequence_gap_filtering_worker(infile, originalfile, noparafile, outfile, cur_og, min_seq_prop_kept, max_seq_prop_gap, min_seq_len)
         tax_list = []
         for seq in new_seq_list:
             tax_list.append(seq[0:4])
         tax_count = len(list(set(tax_list)))
-        index_handle.write("%s\t%s\t%s\n" % (cur_og, tax_count, len(new_seq_list)))
+        index_handle.write("%s\t%s\t%s\t%s\n" % (cur_og, tax_count, len(new_seq_list), ",".join([seq.split("-")[0] for seq in new_seq_list])))
     index_handle.close()
     
 
@@ -2812,7 +2800,7 @@ def alignment_column_filtering(aligned_dir, filtered_dir, og_list, nogap_min_cou
         infile = "%s/og_cds_%s.afa" % (aligned_dir, cur_og)
         outfile = "%s/og_cds_%s.afa" % (filtered_dir, cur_og)
         work_list.append([infile, outfile, cur_og, nogap_min_count, nogap_min_prop, nogap_min_taxa, required_taxon_dic])
-#        alignment_column_filtering_worker(infile, outfile, cur_og, nogap_min_count, nogap_min_prop, required_taxon_dic)
+#        alignment_column_filtering_worker([infile, outfile, cur_og, nogap_min_count, nogap_min_prop, nogap_min_taxa, required_taxon_dic])
     pool.map_async(alignment_column_filtering_worker, work_list).get(9999999)
 
 def alignment_column_filtering_worker(param_list):#infile, outfile, cur_og, nogap_min_count, nogap_min_prop, required_taxon_dic):
@@ -3010,7 +2998,7 @@ def write_orthos(ortho_file, seq_dic, paras_allowed, outdir, indexfile):
         counter += 1
     ref_file.close()
 
-def write_orthogroups(ortho_dic, seq_dic, paras_allowed, outdir, indexfile, min_taxa):
+def write_orthogroups(ortho_dic, seq_dic, outdir, indexfile, min_taxa):
     #read/parse orthology file and write files containing all sequences.
     #also create an index file that lists the number of taxa in each OG.
     #writes OG's with paralogs in them but just doesn't write sequences
@@ -3019,12 +3007,9 @@ def write_orthogroups(ortho_dic, seq_dic, paras_allowed, outdir, indexfile, min_
         os.mkdir(outdir)
     if not os.path.isdir(outdir + "_prots"):
         os.mkdir(outdir + "_prots")
-#    for og, gene_list in ortho_dic.items():
-        
     ref_file = open(indexfile, 'w')
-    ref_file.write("#og\tnum_taxa\tdummy\n")
+    ref_file.write("#og\tnum_taxa\tnum_seqs\n")
     counter = 0
-#    reader = open(ortho_file, 'rU')
     noparas_ortho_dic = {}
     for og, gene_dic in ortho_dic.items():
         noparas_ortho_dic[og] = {}
@@ -3032,24 +3017,19 @@ def write_orthogroups(ortho_dic, seq_dic, paras_allowed, outdir, indexfile, min_
             if "," not in genes[0]:
                 noparas_ortho_dic[og][cur_species] = genes[0]
     for og, gene_dic in noparas_ortho_dic.items():
-#        print og
-#        print gene_dic
         if len(gene_dic.keys()) < min_taxa:
             continue
-        ref_file.write("%s\t%s\t0\n" % (og, len(gene_dic.keys())))
+        ref_file.write("%s\t%s\t%s\n" % (og, len(gene_dic.keys()), len(gene_dic.keys())))
         outfile = open("%s/og_cds_%s.fa" % (outdir, og), 'w')
         protfile = open("%s_prots/og_cds_%s.faa" % (outdir, og), 'w')
         
         for cur_species, genes in gene_dic.items():
-#            print genes
-#                cur_species = gene[0:4]
             outfile.write(">%s\n%s\n" % (genes, seq_dic[cur_species][genes].upper()))
             protfile.write(">%s\n%s\n" % (genes, str(Seq.Seq(seq_dic[cur_species][genes].upper()).translate())))
         outfile.close()
         protfile.close()
 
-
-def write_orthoparagroups(ortho_dic, seq_dic, paras_allowed, outdir, indexfile, min_taxa):
+def write_orthoparagroups(ortho_dic, seq_dic, outdir, indexfile, min_taxa):
     #read/parse orthology file and write files containing all sequences.
     #also create an index file that lists the number of taxa in each OG.
     #Does write orthogroups with paralogs but does some filtering:
@@ -3112,15 +3092,9 @@ def remove_shorter_seqs(gene_dic, seq_dic):
         return {}
 
 def concatenate_for_raxml(input_dir, outfile, og_list, species_list):
-    #take directory of alignments and concatenate them all into a
-    #RAxML formatted fasta file
-#    SPECIES_LIST = ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LFIG", "AAUR", "AVIR", "HRUB", "LALB", "HQUA", "Nmel", "Dnov", "Mgen"]
-#    SPECIES_LIST = ["ACEP", "ACOL", "AECH", "AMEL", "CBIR", "CCOS", "CFLO", "DQUA", "HSAL", "LHUM", "MPHA", "PBAR", "PGRA", "SINV", "TCOR", "TSEP", "TZET", "VEME", "WAUR"]
-#    SPECIES_LIST = ["ASUC", "ECOL", "GAPI", "GBOM", "GINT", "GMEN", "FNIG", "GOMB", "HPAR", "VMIM", "FPER"]
-#    SPECIES_LIST = ["ATUM", "BAPI", "BAUS", "BBAC", "BBIR", "BHEN", "BMEL", "BNIG", "BQUI", "BTAM", "OANT", "THOE"]
-#    SPECIES_LIST = ["AMEL", "AFLO", "BIMP", "BTER", "EMEX", "EDIL", "MROT", "MQUA", "HLAB", "LALB", "DNOV", "CCAL"]
-#    SPECIES_LIST = ["PGRA", "PCON", "PPAL", "PDEN", "PELO", "PCUB", "PFLA", "PPSW"]
-#    SPECIES_LIST = ["CCOS", "TSEP", "TZET", "TCOR", "PGRA", "PCON", "PPAL", "PDEN", "PELO", "PCUB", "PFLA", "PPSW", "ACEP", "ACOL", "AECH", "CBIR",  "CFLO", "DQUA", "HSAL", "LHUM", "PBAR", "SINV", "COBS"]
+    #take list of alignments and concatenate them all into a
+    #RAxML formatted fasta file of amino acid sequences. 
+    #Uses trimAl filtered alignments.
     SPECIES_LIST = species_list
     full_dic = {}
     for species in SPECIES_LIST:
@@ -3128,9 +3102,7 @@ def concatenate_for_raxml(input_dir, outfile, og_list, species_list):
     seq_len = 0
     seq_count = 0
     for og in og_list:
-#        alignment = "%s/og_cds_%s.afa-gb" % (input_dir, og)
         alignment = "%s/og_cds_%s.afa.trimal" % (input_dir, og)
-#    for alignment in glob("%s/*.afa-gb" % input_dir):
         reader = SeqIO.parse(alignment, format = 'fasta')
         for rec in reader:
             cur_species = rec.id[0:4]
@@ -3138,8 +3110,6 @@ def concatenate_for_raxml(input_dir, outfile, og_list, species_list):
             full_dic[cur_species].append(str(cur_seq))
         seq_count += 1
         seq_len += len(cur_seq)
-#        if seq_count >= 100:
-#            break
     print "total genes used: " + str(seq_count)
     writer = open(outfile, 'w')
     writer.write("%s %s\n" % (len(SPECIES_LIST), seq_len))
@@ -3322,9 +3292,8 @@ def read_ortho_index(index_file, min_taxa, paras_allowed):
             continue
         cur_line = line.split()
         if not paras_allowed:
-            if int(cur_line[2]) > 0:
+            if int(cur_line[2]) > int(cur_line[1]):
                 continue
-#        if int(cur_line[1]) - int(cur_line[2]) >= min_taxa:
         if int(cur_line[1]) >= min_taxa:
             og_list.append(int(cur_line[0]))
     return og_list
@@ -3808,17 +3777,99 @@ def target_taxa_in_og(ortho_dic, target_taxa, og_list):
             new_ogs.append(og_num)
     return new_ogs
 
-def min_taxa_membership(ortho_dic, target_taxa, og_list, min_number):
-    new_ogs = []
-    for og_num in og_list:
-        og_complete = True
-        target_count = 0
-        for taxa in target_taxa:
-            if taxa in ortho_dic[og_num]:
-                target_count += 1
-        if target_count >= min_number:
-            new_ogs.append(og_num)
-    return new_ogs
+def make_taxa_dic(infile):
+    #This reads in the minimum required taxonomy file. It returns two
+    #dictionaries. manda_dic has tuples of taxon names as keys and 
+    #the number of those taxa required as values. multi_dic has a tuple
+    #of tuples as keys. The idea here is that the nested tuples represent
+    #sets of species that must appear together. The values are the number
+    #of nested tuples that must appear.
+    reader = open(infile, 'rU')
+    manda_dic = {}
+    multi_dic = {}
+    remove_list = []
+    for line in reader:
+        cur_line = line.split()
+        if int(cur_line[0]) < 0:
+            remove_list.append(cur_line[1])
+        if "(" in cur_line[1]:
+            taxa_list = cur_line[1].split("),(")
+            first_pair = taxa_list[0].replace(")","").replace("(", "").split(",")
+            first_tuple = (first_pair[0],)
+            for taxon in first_pair[1:]:
+                first_tuple = first_tuple + (taxon,)
+            taxa_tuple = (first_tuple,)
+
+            for taxon in taxa_list[1:]:
+                next_pair = taxon.replace(")","").replace("(", "").split(",")
+                next_tuple = (next_pair[0],)
+                for next_taxon in next_pair[1:]:
+                    next_tuple = next_tuple + (next_taxon,)
+                taxa_tuple = taxa_tuple + (next_tuple,)
+            multi_dic[taxa_tuple] = int(cur_line[0])
+                
+        else:
+            taxa_list = cur_line[1].split(",")
+            taxa_tuple = (taxa_list[0],)
+            for taxon in taxa_list[1:]:
+                taxa_tuple = taxa_tuple + (taxon,)
+            manda_dic[taxa_tuple] = int(cur_line[0])
+    return manda_dic, multi_dic, remove_list
+            
+def min_taxa_membership(manda_dic, multi_dic, remove_list, index_file, min_taxa, exclude_paras):
+    reader = open(index_file, 'rU')
+    og_list = []
+    for line in reader:
+        if line.startswith("#"):
+            continue
+        include = True
+        cur_line = line.split()
+        if int(cur_line[1]) - len(remove_list) < min_taxa:
+            continue
+        if int(cur_line[2]) > int(cur_line[1]):
+            if int(cur_line[1]) - (int(cur_line[2]) - int(cur_line[1])) - len(remove_list) < min_taxa:
+                continue #excludes loci where there aren't enough taxa after paralog removal
+        taxa_list = [seq[0:4] for seq in cur_line[3].split(",")]
+        if exclude_paras:
+            taxa_noparas = [taxa for taxa in taxa_list if taxa_list.count(taxa)<2]
+        else:
+            taxa_noparas = list(set(taxa_list))
+        for these_taxa, min_count in manda_dic.items():
+            mycount = 0
+            for this_taxon in these_taxa:
+                if this_taxon in taxa_noparas:
+                    mycount += 1
+            if mycount < min_count:
+                include = False
+                break
+        if not include:
+            continue
+        for these_sets, min_count in multi_dic.items():
+            mycount = 0
+            for this_set in these_sets:
+                set_total = 0
+                for this_taxon in this_set:
+                    if this_taxon in taxa_noparas:
+                        set_total += 1
+                if set_total == len(this_set):
+                    mycount += 1
+            if mycount < min_count:
+                include = False
+        if include:
+            og_list.append(int(cur_line[0]))
+    return og_list
+
+# def min_taxa_membership(ortho_dic, target_taxa, og_list, min_number):
+#     new_ogs = []
+#     for og_num in og_list:
+#         og_complete = True
+#         target_count = 0
+#         for taxa in target_taxa:
+#             if taxa in ortho_dic[og_num]:
+#                 target_count += 1
+#         if target_count >= min_number:
+#             new_ogs.append(og_num)
+#     return new_ogs
 
 def og_taxa_list(ortho_dic, og_num):
     new_ogs = []

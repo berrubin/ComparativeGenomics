@@ -1,0 +1,11 @@
+gblocks	/Genomics/kocherlab/berubin/local/src/Gblocks_0.91b
+trimal	/Genomics/kocherlab/berubin/local/src/trimal/source
+prank	/Genomics/kocherlab/berubin/local/src/prank
+fsa	/Genomics/kocherlab/berubin/local/src/fsa-1.15.9/bin
+codeml	/Genomics/kocherlab/berubin/local/src/paml4.9e/bin
+hyphy	/usr/local/hyphy/2.3.11/bin
+encprime	/Genomics/kocherlab/berubin/local/src/ENCprime/bin
+raxml	/Genomics/kocherlab/berubin/local/src
+fasttree	/Genomics/kocherlab/berubin/local/src
+consel	/Genomics/kocherlab/berubin/local/src/consel/src
+blast	/Genomics/kocherlab/berubin/local/src/ncbi-blast-2.5.0+/bin

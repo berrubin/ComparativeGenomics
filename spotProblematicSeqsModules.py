@@ -2,6 +2,7 @@
 ####used the Jarvis et al. (Science 346: 1320-1331) Avian Phylogenomics Project scripts for amino acid alignments, which masks over poorly aligning regions of individual sequences (rather than omitting entire alignment columns)
 
 from numpy import *
+import os
 import sys
 from Bio import AlignIO
 from Bio import SeqIO
@@ -16,18 +17,21 @@ def jarvis_filter(og_list, indir, outdir, len_min, num_threads):
     maxGapContent=0.6
     aaMatrix="/Genomics/kocherlab/berubin/local/developing/selection_pipeline/blosum62.txt"
     pool = multiprocessing.Pool(processes = num_threads)
-    ignoreSeqs=["HUMAN", "ANOCA","CHEMY","ALLIG"]
 
     matrixAA=readMatrix(aaMatrix)
     work_list = []
     for cur_og in og_list:
         outfile = "%s/og_pep_%s_WrongA.txt" % (outdir, cur_og)
+        if os.path.exists(outfile):
+            reader = open(outfile, 'rU')
+            if "END_OF_MASKS" in reader.readlines():
+                continue #don't rerun an already finished mask
         infile = "%s/og_cds_%s.afa" % (indir, cur_og)
         translate_file = open("%s/og_pep_%s.afa" % (outdir, cur_og), 'w')
         reader = SeqIO.parse(infile, format = 'fasta')
         for rec in reader:
             cur_seq = Seq.Seq(str(rec.seq).replace("-", "N")).translate()
-            translate_file.write(">%s\n%s\n" % (rec.id, str(cur_seq)))
+            translate_file.write(">%s\n%s\n" % (rec.id, str(cur_seq).replace("*","X").replace("J","X").replace("Z","X").replace("B","X")))
         translate_file.close()
         infile = "%s/og_pep_%s.afa" % (outdir, cur_og)
         work_list.append([infile, outfile, window, step, maxGapContent, matrixAA])
@@ -40,6 +44,8 @@ def jarvis_mask(infile, jarvis_out, outfile, len_min):
     reader = open(jarvis_out, 'rU')
     filter_coords = {}
     for line in reader:
+        if "END_OF_MASKS" in line:
+            break
         cur_line = line.split()
         filter_coords[cur_line[0]] = ((int(cur_line[1])+1)*3, (int(cur_line[2])+1)*3)
     reader = SeqIO.parse(infile, format = 'fasta')
@@ -50,8 +56,8 @@ def jarvis_mask(infile, jarvis_out, outfile, len_min):
         seq_dic[seq_name][mask[0] : mask[1]] = "N"*(mask[1]-mask[0])
     outdic = {}
     for k, v in seq_dic.items():
-        if len(v) - (v.count("N") + v.count("-")) >= len_min:
-            outdic[k] = "".join(v)
+#        if len(v) - (v.count("N") + v.count("-")) >= len_min:
+        outdic[k] = "".join(v)
     outfile = open(outfile, 'w')
     for k, v in outdic.items():
         outfile.write(">%s\n%s\n" % (k, v))
@@ -133,7 +139,7 @@ def jarvis_filter_worker(param_list): #infile, outfile, window, step, maxGapCont
                 out1.write("%s\t%s\n"%(name, a))
                         
             i+=1
-
+    out1.write("END_OF_MASKS")
     out1.close()
 
 def getAveProbPerWindowPerSeq(align, pGaps):

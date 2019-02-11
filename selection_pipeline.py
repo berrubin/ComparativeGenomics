@@ -13,17 +13,18 @@ parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int, def
 parser.add_option("-o", "--prefix", dest = "prefix", type = str, help = "String used at the beginning of output directories and files.")
 parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Output directory.")
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int, default = 4)
-parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/hic/orthomcl/groups.txt", help = "File of orthologous groups.")
-parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "/Genomics/kocherlab/berubin/annotation/orthology/sc_15_taxa/RAxML_bestTree.sc_15_taxa_100_genes.tree", help = "Phylogeny of species examined.")
+parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "Orthogroups.txt", help = "File of orthologous groups.")
+parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "species.tree", help = "Phylogeny of species examined.")
 parser.add_option("-a", "--action", dest = "action", type = str, help = "Analysis to do", default = "paml")
 parser.add_option("-i", "--inspecies", dest = "inspecies", type = str, help = "Species of interest in pairwise analyses")
 parser.add_option("-u", "--outspecies", dest = "outspecies", type = str, help = "Outgroup species in pairwise analyses")
 parser.add_option("-y", "--timetree", dest = "timetree", type = str, help = "Time calibrated tree")
 parser.add_option("-z", "--traittree", dest = "traittree", type = str, help = "Trait tree")
 parser.add_option("-f", "--noncoding_seq_type", dest = "noncoding_seq_type", type = str, help = "Sequence type for HKA tests (flank, intron, or first_intron)", default = "flank")
-parser.add_option("-g", "--no_gblocks", dest = "use_gblocks", action = "store_false", default = True, help = "Should Gblocks be used on alignments?")
+parser.add_option("-g", "--no_gblocks", dest = "use_gblocks", action = "store_false", default = False, help = "Should Gblocks be used on alignments?")
+parser.add_option("--no_paralogs", dest = "no_paralogs", action = "store_true", default = False, help = "Should all paralogs be discarded immediately?")
 parser.add_option("-c", "--foreground", dest = "foreground", type = str, default = "", help = "Foreground taxa for selection test")
-parser.add_option("-d", "--param_file", dest = "param_file", type = str, default = "/Genomics/kocherlab/berubin/comparative/halictids/halictids.params")
+parser.add_option("-d", "--param_file", dest = "param_file", type = str, default = "halictids.params")
 parser.add_option("-j", "--rerconverge_output", dest = "rerconverge_output", type = "str", default = "", help = "Output file from RERconverge")
 parser.add_option("-w", "--orthofile_format", dest = "orthofile_format", type = "str", default = "orthofinder", help = "Format of orthofile.")
 parser.add_option("--nogap_min_count", dest = "nogap_min_count", type = int, default = 8, help = "The minimum number of sequences in an alignment that are not gaps in an individual column.")
@@ -32,46 +33,108 @@ parser.add_option("--nogap_min_species", dest = "nogap_min_species", type = int,
 parser.add_option("--min_seq_prop_kept", dest = "min_seq_prop_kept", type = float, default = 0.5, help = "The minimum fraction of a sequence that has to remain after every filtering step in order to keep that sequence in the alignment.")
 parser.add_option("--max_seq_prop_gap", dest = "max_seq_prop_gap", type = float, default = 0.5, help = "The maximum fraction of a sequence that is gap characters. Otherwise that sequence is discarded from the alignment.")
 parser.add_option("--min_cds_len", dest = "min_cds_len", type = int, default = 300, help = "The minimum length of a coding sequence to keep.")
+parser.add_option("--paths_file", dest = "paths_file", type = str, default = "pathsfile.params", help = "File containing paths to executables.")
+parser.add_option("--outputfile", dest = "outputfile", type = str, default = "output.txt", help = "Name of output file.")
+parser.add_option("--taxa_inclusion", dest = "taxa_inclusion", type = str, help = "File with taxa requirements.")
 
 (options, args) = parser.parse_args()
 
-STOP_CODONS = ["TAA", "TAG", "TGA"]
-SPECIES_LIST = ["APUR", "HLIG", "LCAL", "LLEU", "LMAL", "LMAR", "LOEN", "LPAU", "LVIE", "LZEP", "LALB", "AAUR", "LFIG", "HRUB", "AVIR"]
-SOCIAL = ["HLIG","LMAL", "LMAR", "LPAU", "LZEP", "AAUR", "LCAL", "LALB"]
-REV_SOLITARY = ["APUR", "LLEU", "LOEN", "LVIE", "LFIG"]
-ANC_SOLITARY = ["Nmel", "Dnov"]
-POLYMORPHIC = ["LCAL", "LALB"]
+#PATHS_DIC = utils.read_exec_paths(options.paths_file)
+
 HALICTUS = ["HRUB", "HQUA", "HLIG"]
 AUGOCHLORINES = ["AAUR", "APUR", "MGEN"]
 LASIOGLOSSUM = ["LLEU", "LMAR", "LFIG", "LZEP", "LVIE", "LALB", "LCAL", "LMAL", "LPAU", "LOEN"]
-ANC_SOLITARY = ["DNOV", "NMEL", "AVIR"]
 
 def main():
-    cds_dic = utils.read_params(options.param_file)
-    print options.action
     if not os.path.isdir(options.base_dir):
-        os.mkdir(options.base_dir)     #create working directory
-#    ortho_dic = utils.ortho_reader("/Genomics/kocherlab/berubin/annotation/orthology/proteinortho3.proteinortho")
-    if options.orthofile_format == "orthofinder":
-        ortho_dic = utils.orthofinder_reader(options.ortho_file)
-    elif options.orthofile_format == "orthomcl":
-        ortho_dic = utils.orthomcl_reader(options.ortho_file)
-    else:
-        ortho_dic = utils.ortho_reader(options.ortho_file)
-    index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        os.mkdir(options.base_dir) #create working directory
+    print options.action
+
+    if options.action == "write_orthos":
+        cds_dic = utils.read_params(options.param_file)
+        ortho_dic = utils.read_orthofile(options.orthofile_format, options.ortho_file)
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        seq_dic = utils.get_cds_files(cds_dic)
+        if options.no_paralogs:
+            utils.write_orthos(options.ortho_file, seq_dic, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
+        else:
+            utils.write_orthoparagroups(ortho_dic, seq_dic, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file, options.min_taxa)
+        print "Orthogroups written to %s/%s_orthos" % (options.base_dir, options.prefix)
+        print "Exiting"
+        sys.exit()
+
+###Align coding sequences and concatenate all protein sequences into 
+###an aligned matrix that can be input into RAxML to make a phylogeny.
+    if options.action == "align_coding":
+        cds_dic = utils.read_params(options.param_file)
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        paras_allowed = True 
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed) #Gets list of OGs that meet minimum taxa requirement. If paras_allowed is False then will not return any OGs with any paralogs in them.
+        iscoding = True
+        utils.fsa_coding_align(og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.num_threads, iscoding)
+        print "Orthogroups aligned using FSA and output written to %s/%s_fsa_coding" % (options.base_dir, options.prefix)
+        paras_allowed = False
+        og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed) #Gets only those OGs that have a single sequence for every species in the study. This is for making a sequence matrix that can be used for phylogenetics.
+        utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
+        print "If you would like to run a phylogenetic analysis, a concatenated amino acid sequence matrix of all orthogroups including all %s of the species in your study has been written to %s/%s.afa" % (len(cds_dic.keys()), options.base_dir, options.prefix)
+        print "Exiting"
+        sys.exit()
+
+    if options.action == "alignment_filter":
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        paras_allowed = True
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        utils.alignment_column_filtering("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
+        print "First iteration of column filtering done. Results written to %s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix)
+        print "Starting Jarvis filter."
+        utils.jarvis_filtering(og_list, "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), options.min_cds_len, options.num_threads)
+        print "Jarvis filtering done. Results written to %s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix)
+        utils.alignment_column_filtering("%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
+        print "Second iteration of column filtering done. Results written to %s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix)
+        utils.sequence_gap_filtering("%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_orthos" % (options.base_dir, options.prefix), og_list, options.min_seq_prop_kept, options.max_seq_prop_gap, options.min_cds_len, "%s/%s_filtered.index" % (options.base_dir, options.prefix))
+        print "Filtering of whole sequences based on gap content done. Results written to %s/%s_fsa_coding_jarvis_columnfilt_seqfilt" % (options.base_dir, options.prefix)
+        print "Exiting"
+        sys.exit()
+
+    if options.action == "rer_converge":
+        test_type = "aaml_blengths"
+        foreground = "aaml_blengths"
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        print len(og_list)
+#        og_list = [17214]
+        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
+        utils.read_aaml_phylos(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), "%s/aaml_compiled" % (options.base_dir), options.outputfile, options.min_taxa)
+        sys.exit()
+
+    if options.action == "hyphy_relax":
+        test_type = "RELAX"
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        print len(og_list)
+        if options.foreground == "INTREE":
+            fore_list = "INTREE"
+            cur_og_list = og_list
+        else:
+            fore_list = options.foreground.split(",")
+            cur_og_list = utils.min_taxa_membership(ortho_dic, fore_list, og_list, 3)
+
+        print len(cur_og_list)
+        utils.paml_test(cur_og_list, fore_list, test_type, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa)
+        utils.read_hyphy_relax(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
+        sys.exit()
+
     if options.action == "mk":
         utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
         sys.exit()
+
     if options.action == "hka":
         utils.hka_test(options.inspecies, options.outspecies, options.noncoding_seq_type, ortho_dic, options.base_dir, options.num_threads,"%s/%s_fsa_coding" % (options.base_dir, options.prefix))    
         sys.exit()
+
     if options.action == "godatabase":
-        ipr_taxa_list = ["AAUR", "APUR", "AVIR", "HLIG", "HRUB", "LCAL", "LFIG", "LLEU", "LMAL"]
-        ipr_taxa_list = ["GNIG"]
-        ipr_taxa_list = ["AMEL"]
-        ipr_taxa_list = ["PGRA"]
-        ipr_taxa_list = ["ACEP"]
-        ipr_taxa_list = ["LALB"]
         gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/AMEL/AMEL.gaf"
         gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/PGRA/PGRA.gaf"
         gaf_file = "/Genomics/kocherlab/berubin/annotation/trinotate/ACEP/ACEP.gaf"
@@ -79,54 +142,12 @@ def main():
         utils.make_go_database(ortho_dic, ipr_taxa_list, "%s/%s" % (options.base_dir, options.prefix), gaf_file)
         sys.exit()
 
-###Align coding sequences and concatenate all protein sequences into 
-###an aligned matrix that can be input into RAxML to make a phylogeny.
-    if options.action == "align_coding":
-        paras_allowed = True 
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        iscoding = True
-        cur_og_list = og_list
-        utils.fsa_coding_align(cur_og_list, "%s/%s_orthos/" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.num_threads, iscoding)
-        og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed)
-        utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
-        sys.exit()
-
-    if options.action == "alignment_filter":
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        og_list = range(12375,12387) #[12544]
-        min_taxa_dic = {1:HALICTUS, 1:AUGOCHLORINES, 1:ANC_SOLITARY, 1:LASIOGLOSSUM}
-        utils.alignment_column_filtering("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
-        print "column filtering done"
-        utils.jarvis_filtering(og_list, "%s/%s_fsa_coding_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), options.min_cds_len, options.num_threads)
-        print "jarvis filtering done"
-        utils.alignment_column_filtering("%s/%s_fsa_coding_jarvis" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), og_list, options.nogap_min_count, options.nogap_min_prop, options.nogap_min_species, {}, options.num_threads)
-        print "column filtering done"
-        utils.sequence_gap_filtering("%s/%s_fsa_coding_jarvis_columnfilt" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt" % (options.base_dir, options.prefix), "%s/%s_orthos" % (options.base_dir, options.prefix), og_list, options.min_seq_prop_kept, options.max_seq_prop_gap, options.min_cds_len, "%s/%s_filtered.index" % (options.base_dir, options.prefix))
-        print "sequence filtering done"
-        sys.exit()
-
-    if options.action == "write_orthos":
-
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/gilliamella/renamed_cds_seqs")
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/acacias/selection/bartonella/renamed_cds_seqs")
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/treehoppers/cds_seqs")
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/ants/PGRA_ants/renamed_cds_seqs")
-#        seq_dic = utils.get_cds("/Genomics/kocherlab/berubin/ants/bees/bee_data/renamed_cds_seqs")
-#        seq_dic = utils.get_bee_cds()
-#        seq_dic = utils.get_bumble_cds()
-#        seq_dic = utils.get_acacia_cds()
-        seq_dic = utils.get_cds_files(cds_dic)
-        #write fastas for ALL orthologous groups
-#        utils.write_orthos(options.ortho_file, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file)
-        utils.write_orthoparagroups(ortho_dic, seq_dic, True, "%s/%s_orthos" % (options.base_dir, options.prefix), index_file, options.min_taxa)
-        sys.exit()
     if options.action == "yn_dnds":
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-
         utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file, options.min_taxa, options.use_gblocks)
         sys.exit()
+
     if options.action == "gc_content":
         if not os.path.isdir("%s/%s_gc_content" % (options.base_dir, options.prefix)):
             os.mkdir("%s/%s_gc_content" % (options.base_dir, options.prefix))
@@ -134,22 +155,18 @@ def main():
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
         utils.gc_content(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gc_content" % (options.base_dir, options.prefix))
         sys.exit()
+
     if options.action == "free_ratios":
         test_type = "free"
         foreground = "free"
         get_dn_ds = True
-#        get_dn_ds = False
         paras_allowed = True
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-#        og_list = [3050]
-#        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
-#        target_taxa = ["AAUR", "APUR", "LFIG", "LMAR", "LZEP", "LVIE", "LOEN", "LPAU"]
-#        cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
+        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
         cur_og_list = og_list
         utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list)
-#        for leafer in ["TZET", "TSEP", "TCOR", "AECH", "ACOL", "ACEP"]:
-#            utils.read_frees_subset("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_subset_%s_results" % (options.base_dir, options.prefix, foreground, test_type, leafer), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list, ["CFLO", "COBS", "DQUA", "HSAL", "LHUM", "PBAR", "SINV", "CBIR", "PGRA","CCOS", leafer])
         sys.exit()
+
     if options.action == "termfinder":
 #        for species in ["AFLO", "AMEL", "MQUA", "MQUA_apis"]:
         for species in ["BIMP", "BTER"]:
@@ -259,23 +276,7 @@ def main():
         utils.discordance(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_protein_trees" % (options.base_dir, options.prefix), "%s/%s_discordance" % (options.base_dir, options.prefix), options.tree_file, options.num_threads)
         utils.read_discordance("%s/%s_discordance" % (options.base_dir, options.prefix), og_list, options.base_dir)
         sys.exit()
-    if options.action == "clark_test":
-        test_type = "aaml_blengths"
-        foreground = "aaml_blengths"
-        
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-#        cur_og_list = utils.min_taxa_membership(ortho_dic, ["LOEN", "LVIE", "LFIG", "APUR", "HQUA", "LLEU"], og_list, 3)
-#        cur_og_list = [368]
-        cur_og_list = og_list
-        utils.paml_test(cur_og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa)
-        phylo_dic = utils.read_aaml_phylos(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s" % (options.base_dir), options.min_taxa)
-        fore_list = ["APUR", "LFIG", "LOEN", "LVIE", "LLEU"]
-    #    fore_list = ["AAUR", "LMAR", "LPAU", "LZEP", "LMAL", "HLIG"]
-        exclude_list = ["LCAL", "LALB", "HRUB", "NMEL", "DNOV", "AVIR"]
-    #    utils.marine_test(phylo_dic, options.tree_file, fore_list, exclude_list, "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type))
 
-        sys.exit()
     if options.action == "time_aamls":
         paras_allowed = True
         foreground = "aaml_blengths"
@@ -284,25 +285,6 @@ def main():
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
 #        og_list = [6627]
         utils.aaml_time_phylos(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_aaml_time_calibrated" % (options.base_dir, options.prefix), options.timetree, fore_list)
-        sys.exit()
-    if options.action == "hyphy_relax":
-        test_type = "RELAX"
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        print len(og_list)
-#        og_list = [3864,5029,8351,9145,1448,1343,3192,947,5491]
-#        og_list = [10902,14933,6373,4769,7659,1058,1752]
-#        og_list = [3854]
-        if options.foreground == "INTREE":
-            fore_list = "INTREE"
-            cur_og_list = og_list
-        else:
-            fore_list = options.foreground.split(",")
-            cur_og_list = utils.min_taxa_membership(ortho_dic, fore_list, og_list, 3)
-
-        print len(cur_og_list)
-        utils.paml_test(cur_og_list, fore_list, test_type, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa)
-        utils.read_hyphy_relax(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
         sys.exit()
         
     if options.action == "ds_correlations":

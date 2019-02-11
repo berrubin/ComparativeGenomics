@@ -8,10 +8,10 @@ These scripts make up a pipeline used for running tests for signatures of select
 
 It is necessary that species designations are four characters long and that they preface gene names.
 
-1. A file with orthogroups. Theoretically, any method can be used to identify orthogroups. Currently, the pipeline is only fully functional with the output format of OrthoFinder, e.g.:
+1. A file with orthogroups. Theoretically, any method can be used to identify orthogroups. Currently, the default is to read files of the output format of OrthoFinder, e.g.:
 OG0000000: TAX1_00001 TAX2_00002
 
-If converting from another format, it is required to maintain at least five zeros in the OG designation.
+However, OrthoMCL and ProteinOrtho can also be read if `-w orthomcl` or `-w proteinortho` is specified when calling `selection_pipeline.py`. If converting from another format, it is required to maintain at least five zeros in the OG designation.
 
 2. Files of CDS for each gene included in the orthogroups file. These files are listed in a two-column params file where the first column is the four character taxon abbreviation and the second column is the path to the fasta file of CDS for that taxon.
 
@@ -48,18 +48,16 @@ In order to align the written orthogroups, the pipeline uses `FSA` with the `--n
 
 Note that we use the additional `-p` parameter here to specify the number of threads to use. The alignment can take awhile so using multiple threads is a good idea. It is embarrassingly parallelized so just splits all of the orthogroups among the available threads and aligns each one on a single thread.
 
-This command will create a new directory, `[output_prefix]_fsa_coding` with unaligned (`*.fa`) and aligned (`*.afa`) fasta files for every locus.
+This command will create a new directory, `[output_prefix]_fsa_coding` with unaligned (`*.fa`) and aligned (`*.afa`) fasta files for every locus. If the pipeline crashes before finishing all of the alignments, not to worry. Simply rerun the above command. It checks whether alignments for each OG have already been completed and will not redo anything that is already done.
 
-Finally, we want to filter the alignments, removing both low-confidence positions and low confidence or low information sequences.
-
-Post-alignment, a number of additional filters can be applied using the `alignment_filter` action. If you run this action then several steps will be executed by default:
+Finally, we want to filter the alignments, removing both low-confidence positions and low confidence or low information sequences. By default, both Gblocks and trimAl are run on each OG and output is included. However, these two methods can be quite stringent, removing potentially valuable informative sequence. Therefore, we use several other post-alignment filters. These can be applied using the `alignment_filter` action. If you run this action then several steps will be executed by default:
 1. Columns in the alignment with fewer than a minimum number of non-gap characters can be removed. The default is 8 and this can be adjusted with `--nogap_min_count`.
 2. Columns in the alignment with less than a proportion of sequences with known nucleotides (anything other than "-" and "N") can be removed. Default behavior is to require at least 30% of sequences be non-gap characters but this can be adjusted with ```--nogap_min_prop```.
 3. Columns with sequences from fewer than a minimum number of species can be removed. Default behavior requires at least 4 species have non-gap characters but this can be changed with `--nogap_min_species`.
 4. Then we used the Jarvis et al. (Science 346: 1320-1331) Avian Phylogenomics Project scripts for filtering amino acid alignments, which mask over poorly aligning regions of individual sequences (rather than omitting entire alignment columns). The scripts ```spotProblematicSeqsModules.py``` and ```spotProblematicSeqsModules-W12S4.py``` were downloaded from ftp://parrot.genomics.cn/gigadb/pub/10.5524/101001_102000/101041/Scripts.tar.gz on 1/31/2019. These scripts were incorporated into the ```selection_pipeline.py``` pipeline through the ```jarvis_filtering()``` function.
 5. These masked sequences are then run through the first three filters again.
-6. If the number of known nucleotides in a sequence after filtering was less than half the length of that sequence originally prefiltering. This ratio can be changed with `--min_seq_prop_kept`.
-7. If the sequence was more than 50% unknown (gap or masked) sequence. This can be changed with `--max_seq_prop_gap`.
-8. Sequences with fewer than 300 known nucleotides in a sequence after filtering. This can be changed with `--min_cds_len`.
+6. Then, sequences are removed completely if the number of known nucleotides in a sequence after filtering was less than half the length of that sequence originally prefiltering. This ratio can be changed with `--min_seq_prop_kept`.
+7. Seqyebces are also removed if the sequence was more than 50% unknown (gap or masked) sequence. This can be changed with `--max_seq_prop_gap`.
+8. Finally, sequences with fewer than 300 known nucleotides in a sequence after filtering are removed. This minimum length can be changed with `--min_cds_len`.
 
 Several new directories are created during the filtering process. The aligned fasta files from the first three filtering steps are including in the `[output_prefix]_fsa_coding_columnfilt` directory. The output from the Jarvis filter in step 4 is in `[output_prefix]_coding_jarvis` and the column-filtered Jarvis-masked alignments (step 5) are in `[output_prefix]_coding_jarvis_columnfilt`. The results from steps 6-8 are in `[output_prefix]_coding_jarvis_columnfilt_seqfilt`. The Jarvis filter can take awhile so you will want to use many threads for this step as well.
