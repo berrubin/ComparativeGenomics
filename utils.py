@@ -3125,12 +3125,9 @@ def gene_trees(og_list, aligndir, outdir, constrained, constraint_tree, num_thre
         work_list.append([og, aligndir, outdir, constrained, constraint_tree])
     pool = multiprocessing.Pool(processes = num_threads)
     if prots_or_nucs == "nucs":
-        pool.map(gene_tree_worker, work_list)
+        pool.map_async(gene_tree_worker, work_list).get(9999999)
     elif prots_or_nucs == "prots":
-        pool.map(protein_tree_worker, work_list)
-    pool.close()
-    pool.join()
-
+        pool.map_async(protein_tree_worker, work_list).get(9999999)
 
 def gene_tree_worker(param_list):
     og = param_list[0]
@@ -3139,7 +3136,7 @@ def gene_tree_worker(param_list):
     constrained = param_list[3]
     constraint_tree = param_list[4]
     seq_dic = {}
-    reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % (aligndir, og), format = 'fasta')
+    reader = SeqIO.parse("%s/og_cds_%s.afa" % (aligndir, og), format = 'fasta')
     for rec in reader:
         seq_dic[rec.id] = str(rec.seq)
         seqlen = len(str(rec.seq))
@@ -3153,7 +3150,6 @@ def gene_tree_worker(param_list):
     if not constrained:
         cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og)]
     else:
-#        cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og), '-g', constraint_tree, '-o', 'AMEL']
         cmd = ["raxmlHPC-PTHREADS-SSE3", '-f', 'a', '-x', '12345', '-p', '12345', '-m', 'GTRGAMMA', '-#', '10', '-T', '2', '-s', "og_cds_%s.afa" % (og), '-n', "og_%s.tree" % (og), '-g', constraint_tree, '-o', 'LALB,DNOV']
     subprocess.call(cmd)
     os.chdir(switch_dir)
@@ -3192,11 +3188,11 @@ def discordance(og_list, aligndir, genetreedir, outdir, species_tree, num_thread
     for og in og_list:
         work_list.append([og, aligndir, genetreedir, outdir, species_tree])
     pool = multiprocessing.Pool(processes = num_threads)
-    pool.map(discordance_worker, work_list)
-    pool.close()
-    pool.join()
+    pool.map_async(discordance_worker, work_list).get(9999999)
 
 def discordance_worker(param_list):
+    #paralogous sequences are removed be default. I don't know
+    #what purpose this would serve if we weren't removing them.
     og = param_list[0]
     print og
     aligndir = param_list[1]
@@ -3204,11 +3200,12 @@ def discordance_worker(param_list):
     outdir = param_list[3]
     species_tree = param_list[4]
     taxa_list = []
-    reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % (aligndir, og), format = 'fasta')
-    outalign = open("%s/og_cds_%s.afa-gb" % (outdir, og), 'w')
+    reader = SeqIO.parse("%s/og_cds_%s.afa" % (aligndir, og), format = 'fasta')
+    outalign = open("%s/og_cds_%s.afa" % (outdir, og), 'w')
+    seq_dic = {}
     for rec in reader:
-        taxa_list.append(rec.id[0:4])
         outalign.write(">%s\n%s\n" % (rec.id[0:4], str(rec.seq)))
+        taxa_list.append(rec.id[0:4])
     outalign.close()
     tree = PhyloTree(species_tree)
     tree.prune(taxa_list)
@@ -3217,12 +3214,12 @@ def discordance_worker(param_list):
     outfile.write(tree.write(format = 5))
     outfile.close()
     FNULL = open(os.devnull, 'w')
-    cmd = ["/Genomics/kocherlab/berubin/local/src/FastTree", "-gamma", "-nt", "-gtr", "-nome", "-mllen", "-intree", "%s/RAxML_bestTree.og_%s.tree" % (genetreedir, og), "-log", "%s/og_%s_novel.log" % (outdir, og), "%s/og_cds_%s.afa-gb" % (outdir, og)]
+    cmd = ["/Genomics/kocherlab/berubin/local/src/FastTree", "-gamma", "-nt", "-gtr", "-nome", "-mllen", "-intree", "%s/RAxML_bestTree.og_%s.tree" % (genetreedir, og), "-log", "%s/og_%s_novel.log" % (outdir, og), "%s/og_cds_%s.afa" % (outdir, og)]
     with open("%s/og_%s_novel.ftlen" % (outdir, og), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile, stderr = FNULL)
     outfile.close() 
 
-    cmd = ["/Genomics/kocherlab/berubin/local/src/FastTree", "-gamma", "-nt", "-gtr", "-nome", "-mllen", "-intree", "%s/og_%s_consensus.tree" % (outdir, og), "-log", "%s/og_%s_consensus.log" % (outdir, og), "%s/og_cds_%s.afa-gb" % (outdir, og)]
+    cmd = ["/Genomics/kocherlab/berubin/local/src/FastTree", "-gamma", "-nt", "-gtr", "-nome", "-mllen", "-intree", "%s/og_%s_consensus.tree" % (outdir, og), "-log", "%s/og_%s_consensus.log" % (outdir, og), "%s/og_cds_%s.afa" % (outdir, og)]
     with open("%s/og_%s_consensus.ftlen" % (outdir, og), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile, stderr = FNULL)
     outfile.close()
@@ -3238,29 +3235,44 @@ def discordance_worker(param_list):
     with open("%s/og_%s_consensus_novel.consel" % (outdir, og), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile, stderr = FNULL)
     outfile.close()
-#    consist = read_consel("%s/og_%s_consensus_novel.consel" % cur_locus)
-#        sumfile.write("%s\t%s\n" % (cur_locus, consist))
-#        sumfile.flush()
-#        sys.exit()
-#    sumfile.close()
 
 def read_discordance(consel_dir, og_list, outpath):
     new_og_list = []
     outfile = open("%s/consel_consistency.txt" % outpath, 'w')
+    outfile.write("OG\tP\tFDR_P\tnumtax\tbp\n")
+    p_dic = {}
+    p_list = []
+    uncorr_dic = {}
+    seq_len_dic = {}
+    num_taxa_dic = {}
     for cur_og in og_list:
-        reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % (consel_dir, cur_og), format = 'fasta')
-        too_short = False
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % (consel_dir, cur_og), format = 'fasta')
+        num_taxa = 0
         for rec in reader:
-            if len(rec.seq) < 900:
-                too_short = True
-                break
-        if not too_short:
-            consist = read_consel("%s/og_%s_consensus_novel.consel" % (consel_dir, cur_og)) 
-            outfile.write("%s\t%s\n" % (cur_og, consist))
-            if consist == "consistency":
-                new_og_list.append(cur_og)
+            num_taxa += 1
+        seq_len_dic[cur_og] = len(rec.seq)
+        num_taxa_dic[cur_og] = num_taxa
+#                too_short = True
+#                break
+#        too_short = False
+#        if not too_short:
+
+        consist = read_consel("%s/og_%s_consensus_novel.consel" % (consel_dir, cur_og)) 
+        p_list.append(consist)
+        uncorr_dic[cur_og] = consist
+#            outfile.write("%s\t%s\n" % (cur_og, consist))
+#            if consist == "consistency":
+#                new_og_list.append(cur_og)
+    
+    pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_i')[1]
+    for x in range(len(pval_corr)):
+        p_dic[og_list[x]] = pval_corr[x]
+    sorted_pvals = sorted(p_dic.items(), key = lambda x: x[1])
+    for pval in sorted_pvals:
+        outfile.write("%s\t%s\t%s\t%s\t%s\n" % (pval[0], uncorr_dic[pval[0]], pval[1], num_taxa_dic[pval[0]], seq_len_dic[pval[0]]))
+        outfile.flush()
     outfile.close()
-    return new_og_list
+    return
 
 def read_consel(consel_path):
     reader = open(consel_path, 'rU')
@@ -3277,10 +3289,11 @@ def read_consel(consel_path):
                 alt_p = float(cur_line[4])
             if int(cur_line[2]) == 1:
                 cons_p = float(cur_line[4])
-    if cons_p < 0.05:
-        return "discrepancy"
-    else:
-        return "consistency"
+    return cons_p
+#    if cons_p < 0.01:       
+#        return "discrepancy"
+#    else:
+#        return "consistency"
     
 
 def read_ortho_index(index_file, min_taxa, paras_allowed):

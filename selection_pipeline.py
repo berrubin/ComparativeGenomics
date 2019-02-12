@@ -103,9 +103,24 @@ def main():
         manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
         og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
         print len(og_list)
-#        og_list = [17214]
         utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
         utils.read_aaml_phylos(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), "%s/aaml_compiled" % (options.base_dir), options.outputfile, options.min_taxa)
+        sys.exit()
+
+    if options.action == "nopara_gene_trees":
+        constrained = False
+        paras_allowed = True
+        include_paras = False
+        og_list = utils.read_ortho_index("%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, paras_allowed)
+        cur_og_list = og_list
+        utils.gene_trees(cur_og_list, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_nopara_nucl_gene_trees" % (options.base_dir, options.prefix), constrained, options.tree_file, options.num_threads, "nucs")
+        sys.exit()
+
+    if options.action == "check_discordance":
+        paras_allowed = True
+        og_list = utils.read_ortho_index("%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, paras_allowed)
+        utils.discordance(og_list, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_nopara_nucl_gene_trees" % (options.base_dir, options.prefix), "%s/%s_discordance" % (options.base_dir, options.prefix), options.tree_file, options.num_threads)
+        utils.read_discordance("%s/%s_discordance" % (options.base_dir, options.prefix), og_list, options.base_dir)
         sys.exit()
 
     if options.action == "hyphy_relax":
@@ -125,6 +140,7 @@ def main():
         utils.paml_test(cur_og_list, fore_list, test_type, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa)
         utils.read_hyphy_relax(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
         sys.exit()
+
 
     if options.action == "mk":
         utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
@@ -255,26 +271,6 @@ def main():
         short_outputname = rerconverge_output.split("/")[-1][0:-4]
         utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_random_termfinder/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
         utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_random_termfinder/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
-        sys.exit()
-    if options.action == "gene_trees":
-        constrained = False
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        cur_og_list = og_list
-
-#        utils.gene_trees(cur_og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gene_trees_constrained" % (options.base_dir, options.prefix), constrained, options.tree_file, options.num_threads)
-#        utils.gene_trees(cur_og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gene_trees" % (options.base_dir, options.prefix), constrained, options.tree_file, options.num_threads, "nucs")
-        utils.gene_trees(cur_og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_protein_trees" % (options.base_dir, options.prefix), constrained, options.tree_file, options.num_threads, "prots")
-        target_taxa = ["LALB", "DNOV"]
-        cur_og_list = utils.target_taxa_in_og(ortho_dic, target_taxa, og_list)
-
-#        utils.compile_gene_trees(cur_og_list, "%s/%s_gene_trees_constrained" % (options.base_dir, options.prefix), options.tree_file, "%s/%s_gene_trees_bls" % (options.base_dir, options.prefix))
-        sys.exit()
-    if options.action == "check_discordance":
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.discordance(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_protein_trees" % (options.base_dir, options.prefix), "%s/%s_discordance" % (options.base_dir, options.prefix), options.tree_file, options.num_threads)
-        utils.read_discordance("%s/%s_discordance" % (options.base_dir, options.prefix), og_list, options.base_dir)
         sys.exit()
 
     if options.action == "time_aamls":
