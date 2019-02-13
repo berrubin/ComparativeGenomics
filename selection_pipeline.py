@@ -36,6 +36,7 @@ parser.add_option("--min_cds_len", dest = "min_cds_len", type = int, default = 3
 parser.add_option("--paths_file", dest = "paths_file", type = str, default = "pathsfile.params", help = "File containing paths to executables.")
 parser.add_option("--outputfile", dest = "outputfile", type = str, default = "output.txt", help = "Name of output file.")
 parser.add_option("--taxa_inclusion", dest = "taxa_inclusion", type = str, help = "File with taxa requirements.")
+parser.add_option("--go_database", dest = "go_database", type = str, help = "File with GO terms mapped to orthogroup names")
 
 (options, args) = parser.parse_args()
 
@@ -252,17 +253,30 @@ def main():
             utils.og_list_termfinder("%s/RER_noncoding_besthit/primitive_bumble_advanced_p0.05_slower_bests_sig_%s.txt" % (options.base_dir, foreground), "%s/RER_noncoding_besthit/primitive_bumble_advanced_p0.05_slower_bests_unsig_%s.txt" % (options.base_dir, foreground), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_noncoding_besthit/primitive_bumble_advanced_p0.05_slower_bests_%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), -9, -9)
 
         sys.exit()
+
+    if options.action == "rer_goatools":
+        if not os.path.exists("%s/RER_goatools" % options.base_dir):
+            os.mkdir("%s/RER_goatools" % options.base_dir)
+        rerconverge_output = options.rerconverge_output
+        short_outputname = rerconverge_output.split("/")[-1][0:-4]
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
+        sys.exit()
+
     if options.action == "rer_termfinder":
         if not os.path.exists("%s/RER_termfinder" % options.base_dir):
             os.mkdir("%s/RER_termfinder" % options.base_dir)
         rerconverge_output = options.rerconverge_output
         short_outputname = rerconverge_output.split("/")[-1][0:-4]
-        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
-        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
-        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "slow")
-        utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "fast")
-        utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_all_go_%s" % (options.base_dir, short_outputname), 3, 0.01)
-        utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_all_go_%s" % (options.base_dir, short_outputname), 3, 0.05)
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_termfinder/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_termfinder/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
+
+        # utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
+        # utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
+        # utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "slow")
+        # utils.rer_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.01, "fast")
+        # utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.01_all_go_%s" % (options.base_dir, short_outputname), 3, 0.01)
+        # utils.og_list_termfinder(rerconverge_output, rerconverge_output, "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/RER_termfinder/rer_0.05_all_go_%s" % (options.base_dir, short_outputname), 3, 0.05)
         sys.exit()
     if options.action == "rer_random_termfinder":
         if not os.path.exists("%s/RER_random_termfinder" % options.base_dir):

@@ -4098,6 +4098,46 @@ def rer_hypergeom(population_file, pop_condition_file, subset_file, ortho_dic, o
         outtie.write("%s\n" % (og))
     outtie.close()
 
+def goatools_termfinder(forelist, backlist, database_file, go_dir):
+    if not os.path.isdir("%s" % (go_dir)):
+        os.mkdir("%s" % go_dir)
+    fore_file = open("%s/forelist.txt" % (go_dir), 'w')
+    for og_num in forelist:
+        fore_file.write("OG_%s\n" % (og_num))
+    fore_file.close()
+    back_file = open("%s/backlist.txt" % (go_dir), 'w')
+    for og_num in backlist:
+        back_file.write("OG_%s\n" % (og_num))
+    back_file.close()
+    cmd = ["/Genomics/kocherlab/berubin/local/src/goatools/goatools/scripts/find_enrichment.py", "%s/forelist.txt" % go_dir, "%s/backlist.txt" % go_dir, database_file, "--obo", "/Genomics/kocherlab/berubin/local/src/goatools/goatools/scripts/go-basic.obo", "--pval", "10", "--outfile", "%s_ps.txt" % (go_dir)]
+    subprocess.call(cmd)
+    reader = open("%s_ps.txt" % (go_dir), 'rU')
+    p_dic = {}
+    go_deets = {}
+    p_list = []
+    go_list = []
+    uncorr_dic = {}
+    for line in reader:
+        if line.startswith("#"):
+            continue
+        cur_line = line.strip().split("\t")
+        go_count = int(cur_line[8])
+        if go_count > 2:
+            cur_p = float(cur_line[6])
+            go_deets[cur_line[0]] = cur_line
+            p_list.append(cur_p)
+            go_list.append(cur_line[0])
+            uncorr_dic[cur_line[0]] = cur_p
+    pval_corr = smm.multipletests(p_list, alpha = 0.05, method = 'fdr_bh')[1]
+    for x in range(len(pval_corr)):
+        p_dic[go_list[x]] = pval_corr[x]
+    sorted_pvals = sorted(p_dic.items(), key = lambda x: x[1])
+    outfile = open("%s_filtered_ps.txt" % go_dir, 'w')
+    outfile.write("GOterm\tpval\tFDR_p\tNS\tenrichm\tname\tratio_in_study\tratio_in_pop\tdepth\tstudy_count\tstudy_items\n")
+    for pval in sorted_pvals:
+        outfile.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (pval[0], uncorr_dic[pval[0]], pval[1], "\t".join(go_deets[pval[0]][1:6]), "\t".join(go_deets[pval[0]][7:9]), go_deets[pval[0]][-1]))
+    outfile.close()
+
 
 def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
 #    reader = open(backfile, 'rU')
@@ -4107,6 +4147,7 @@ def run_termfinder(forelist, backlist, database_file, ortho_dic, go_dir):
 #        back_list.append(cur_og)
     if not os.path.isdir("%s" % (go_dir)):
         os.mkdir("%s" % go_dir)
+
     testing_db = open("%s/testing_db.gaf" % go_dir, 'w')
     reader = open(database_file, 'rU')
     good_backs = []
@@ -4192,6 +4233,12 @@ def rer_termfinder(forefile, backfile, database_file, ortho_dic, go_dir, sig_col
     fore_list = rer_external_list(forefile, int(sig_column), float(sig_cutoff), fast_or_slow)
     back_list = external_list(backfile, -1, -1)
     run_termfinder(fore_list, back_list, database_file, ortho_dic, go_dir)
+
+def rer_goatools(forefile, backfile, database_file, go_dir, sig_column, sig_cutoff, fast_or_slow):
+
+    fore_list = rer_external_list(forefile, int(sig_column), float(sig_cutoff), fast_or_slow)
+    back_list = external_list(backfile, -1, -1)
+    goatools_termfinder(fore_list, back_list, database_file, go_dir)
 
 def rer_external_list(forefile, sig_column, sig_cutoff, fast_or_slow):
     reader = open(forefile, 'rU')
