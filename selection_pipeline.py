@@ -37,6 +37,8 @@ parser.add_option("--paths_file", dest = "paths_file", type = str, default = "pa
 parser.add_option("--outputfile", dest = "outputfile", type = str, default = "output.txt", help = "Name of output file.")
 parser.add_option("--taxa_inclusion", dest = "taxa_inclusion", type = str, help = "File with taxa requirements.")
 parser.add_option("--go_database", dest = "go_database", type = str, help = "File with GO terms mapped to orthogroup names")
+parser.add_option("--goa_forefile", dest = "goa_forefile", type = str, help = "File listing focal orthogroups to be tested against the background for GO enrichment")
+parser.add_option("--goa_backfile", dest = "goa_backfile", type = str, help = "File listing background orthogroups to be used for GO enrichment")
 
 (options, args) = parser.parse_args()
 
@@ -124,6 +126,25 @@ def main():
         utils.read_discordance("%s/%s_discordance" % (options.base_dir, options.prefix), og_list, options.base_dir)
         sys.exit()
 
+    if options.action == "rer_goatools":
+        if not os.path.exists("%s/RER_goatools" % options.base_dir):
+            os.mkdir("%s/RER_goatools" % options.base_dir)
+        rerconverge_output = options.rerconverge_output
+        short_outputname = rerconverge_output.split("/")[-1][0:-4]
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
+        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
+        sys.exit()
+
+    if options.action == "goatools":
+        outbase = options.goa_forefile.split("/")[-1].rsplit(".", 1)[0]
+        if not os.path.exists("%s/%s_goatools/" % (options.base_dir, options.prefix)):
+            os.mkdir("%s/%s_goatools/" % (options.base_dir, options.prefix))
+        outdir = "%s/%s_goatools/%s" % (options.base_dir, options.prefix, outbase)
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+        utils.og_list_goatools(options.goa_forefile, options.goa_backfile, options.go_database, outdir)
+        sys.exit()
+        
     if options.action == "hyphy_relax":
         test_type = "RELAX"
         exclude_paras = True
@@ -135,13 +156,9 @@ def main():
             cur_og_list = og_list
         else:
             fore_list = options.foreground.split(",")
-            cur_og_list = utils.min_taxa_membership(ortho_dic, fore_list, og_list, 3)
-
-        print len(cur_og_list)
-        utils.paml_test(cur_og_list, fore_list, test_type, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa)
-        utils.read_hyphy_relax(cur_og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
+        utils.paml_test(og_list, fore_list, test_type, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
+        utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
         sys.exit()
-
 
     if options.action == "mk":
         utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
@@ -254,14 +271,6 @@ def main():
 
         sys.exit()
 
-    if options.action == "rer_goatools":
-        if not os.path.exists("%s/RER_goatools" % options.base_dir):
-            os.mkdir("%s/RER_goatools" % options.base_dir)
-        rerconverge_output = options.rerconverge_output
-        short_outputname = rerconverge_output.split("/")[-1][0:-4]
-        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_slower_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "slow")
-        utils.rer_goatools(rerconverge_output, rerconverge_output, options.go_database, "%s/RER_goatools/rer_0.05_faster_go_%s" % (options.base_dir, short_outputname), 3, 0.05, "fast")
-        sys.exit()
 
     if options.action == "rer_termfinder":
         if not os.path.exists("%s/RER_termfinder" % options.base_dir):

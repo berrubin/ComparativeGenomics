@@ -2543,7 +2543,7 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                         finished = True
                 if finished:
                     continue
-            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
+            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         else:
             taxon_present = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
             if not taxon_present:
@@ -3837,12 +3837,19 @@ def min_taxa_membership(manda_dic, multi_dic, remove_list, index_file, min_taxa,
             continue
         include = True
         cur_line = line.split()
-        if int(cur_line[1]) - len(remove_list) < min_taxa:
+        if int(cur_line[1]) == 0:
+            continue
+        taxa_to_remove = []
+        taxa_list = [seq[0:4] for seq in cur_line[3].split(",")]
+        for taxa in taxa_list:
+            if taxa in remove_list:
+                taxa_to_remove.append(taxa)
+        if int(cur_line[1]) - len(taxa_to_remove) < min_taxa:
             continue
         if int(cur_line[2]) > int(cur_line[1]):
             if int(cur_line[1]) - (int(cur_line[2]) - int(cur_line[1])) - len(remove_list) < min_taxa:
                 continue #excludes loci where there aren't enough taxa after paralog removal
-        taxa_list = [seq[0:4] for seq in cur_line[3].split(",")]
+
         if exclude_paras:
             taxa_noparas = [taxa for taxa in taxa_list if taxa_list.count(taxa)<2]
         else:
@@ -4121,6 +4128,8 @@ def goatools_termfinder(forelist, backlist, database_file, go_dir):
         if line.startswith("#"):
             continue
         cur_line = line.strip().split("\t")
+        if cur_line[1] in ["CC", "MF"]:
+            continue
         go_count = int(cur_line[8])
         if go_count > 2:
             cur_p = float(cur_line[6])
@@ -4240,6 +4249,11 @@ def rer_goatools(forefile, backfile, database_file, go_dir, sig_column, sig_cuto
     back_list = external_list(backfile, -1, -1)
     goatools_termfinder(fore_list, back_list, database_file, go_dir)
 
+def og_list_goatools(forefile, backfile, database_file, outdir):
+    fore_list = external_list(forefile, -1, -1)
+    back_list = external_list(backfile, -1, -1)
+    goatools_termfinder(fore_list, back_list, database_file, outdir)
+
 def rer_external_list(forefile, sig_column, sig_cutoff, fast_or_slow):
     reader = open(forefile, 'rU')
     fore_list = []
@@ -4285,6 +4299,8 @@ def external_list(forefile, sig_column, sig_cutoff):
             continue
         if line.startswith("Rho"):
             continue
+        if "NA" in line:
+            continue #When RERconverge can't include a locus for whatever reason, it writes the results as NAs. These shouldn't be included because they weren't actually tested.
         cur_line = line.strip().split()
         if sig_column > -1:
             if cur_line[sig_column] == "NA":
