@@ -136,3 +136,6 @@ Here, we need to also include the species tree (`-e`) that we are comparing the 
 
 `selection_pipeline.py -a hyphy_relax -p 16 -b [output directory] -o [output prefix] -t [min. taxa to include locus] --taxa_inclusion [taxon requirement file] -e [newick species tree file] -c [comma-separated list of focal taxa]`
 
+This will create a directory at `[base directory]/[output prefix]_[focal taxa list]_RELAX`. All files required to run HyPhy RELAX and all results will be created in this directory. Output files will be in `og_[current OG]_relax_unlabeledback.txt`. A summary file will also be produced at `[base directory]/compiled_relax_[focal taxa list].txt`. This file will list the OG, the K parameter estimated by HyPhy RELAX, the p-value inferred by HyPhy RELAX, and an FDR-corrected p-value. The "interpretation" column indicates whether a relaxation of selection or intensification of selection is indicated (K < 1 indicated relaxation and K > 1 indicates intensification).
+
+HyPhy RELAX takes substantial computation time. If this process crashes or is cancelled for some reason, it can be restarted with the same command and work will not be repeated.

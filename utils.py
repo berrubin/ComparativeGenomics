@@ -1569,7 +1569,7 @@ def mask_selenocysteine(inseq):
     while index < len(inseq):
 #        print Seq.Seq(inseq[index:index+3].replace("-","N")).translate()
 #        print Seq.Seq(inseq[index:index+3].replace("-","N"))
-        if inseq[index:index+3] == "TGA":
+        if inseq[index:index+3] in STOP_CODONS:
             new_seq.append("NNN")
         elif "N" in inseq[index:index+3]:
             new_seq.append("NNN")
@@ -4493,13 +4493,13 @@ def codon_bias(outdir, species_list, og_list, ortho_dic):
         summary_file.flush()
     summary_file.close()
         
-def read_hyphy_relax(og_list, indir, outdir):
-    outfile = open("%s/compiled_relax.txt" % outdir, 'w')
+def read_hyphy_relax(og_list, indir, outdir, forestring):
+    outfile = open("%s/compiled_relax_%s.txt" % (outdir, forestring), 'w')
     outfile.write("OG\tK\tP\tFDR_P\tinterpretation\n")
     k_list = []
     p_list = []
     for cur_og in og_list:
-        print cur_og
+#        print cur_og
         if not os.path.exists("%s/og_%s_relax_unlabeledback.txt" % (indir, cur_og)):
             print "%s/og_%s_relax_unlabeledback.txt is missing" % (indir, cur_og)
             continue
@@ -4515,8 +4515,14 @@ def read_hyphy_relax(og_list, indir, outdir):
                 continue
             if interpret_line:
                 interpretation = line
+                if interpretation.startswith(">Evidence for"):
+                    interpretation = interpretation.split("*")[1].split(" ")[0]
+                else:
+                    interpretation = "nonsignificant"
                 k_list.append([cur_og, cur_k, cur_p, interpretation])
                 break
+        if interpret_line == False:
+            print "missing %s" % cur_og
     pval_corr = smm.multipletests(p_list, alpha = 0.1, method = 'fdr_bh')[1]
     for x in range(len(pval_corr)):
         k_list[x].insert(3, pval_corr[x])

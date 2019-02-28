@@ -157,7 +157,7 @@ def main():
         else:
             fore_list = options.foreground.split(",")
         utils.paml_test(og_list, fore_list, test_type, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
-        utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir)
+        utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir, options.foreground)
         sys.exit()
 
     if options.action == "mk":
