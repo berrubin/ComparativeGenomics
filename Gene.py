@@ -1,3 +1,4 @@
+import numpy
 import utils
 import changes
 import collections
@@ -27,6 +28,7 @@ class Gene:
         self.potent_nsyn = -1 #Trepl
         self.potent_fourfold = -1
         self.average_n = -1 #npop
+        self.cds_average_n = 0
         self.intron_dic = {}
         self.first_intron_dic = {}
         self.utr3_dic = {}
@@ -529,6 +531,12 @@ class Gene:
             elif rec.num_called == rec.num_het or rec.num_called == rec.num_hom_alt:
                 self.sequence[rec.POS] = "N"
                 continue
+            elif sum(rec.aaf) <= 0.1:
+                called_count[rec.POS] = rec.num_called
+                continue
+            elif sum(rec.aaf)*rec.num_called*2 == 1:
+                called_count[rec.POS] = rec.num_called
+                continue                
             half_missing = 0
             for s in rec.samples:
                 if str(s.data.GT) in ["./1", "./0", "1/.", "0/."]:
@@ -547,14 +555,22 @@ class Gene:
 #        self.called_counts = called_count
         if len(called_count.values()) == 0:
             self.average_n = 0
-        elif "LALB" in self.name:
-            self.average_n = round(1.0 * sum(called_count.values()) / len(called_count.values()))
-        else:
-            self.average_n = round(1.0 * sum(called_count.values()) / len(self.sequence))
+#        elif "LALB" in self.name:
+#            self.average_n = round(1.0 * sum(called_count.values()) / len(called_count.values()))
+#        else:
+        self.average_n = round(1.0 * sum(called_count.values()) / len(self.sequence))
+        
         self.alts = alt_dic
         self.refs = ref_dic
         self.sample_gts = gene_sample_dic
         self.syn_and_nsyn()
+        cds_sample = []
+        for site in self.cds.keys():
+            if called_count.get(site, None) != None:
+                cds_sample.append(called_count[site])
+            else:
+                cds_sample.append(0)
+        self.cds_average_n = 1.0 * sum(cds_sample) / len(cds_sample)
         self.syn_nsyn_by_sample()
         self.potential_sites()
         self.noncoding_subs()

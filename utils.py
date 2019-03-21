@@ -15,6 +15,7 @@ import vcf
 from Bio import SeqIO
 from Bio import Seq
 from Gene import Gene
+from NCAR import NCAR
 from gff import gffParser
 import cPickle as pickle
 import shutil
@@ -137,6 +138,42 @@ def orthofinder_reader(orthofile):
         ortho_dic[cur_og] = gene_dic
     return ortho_dic
 
+def ncar_ortho_dic(ncar_file):
+    reader = open(ncar_file, 'rU')
+    ortho_dic = {}
+    for line in reader:
+        gene_dic = {}
+        cur_line = line.split()
+        cur_nmel = cur_line[0]
+        cur_og = cur_line[1]
+        seq_list = cur_line[3].split(",")
+        for seq in seq_list:
+            cur_species = seq[0:4]
+            gene_dic[cur_species] = seq
+        ortho_dic[cur_og] = gene_dic
+    return ortho_dic
+
+def write_ncars(ortho_dic, seq_dic, outdir, min_taxa, filtered_ortho_file):
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    new_orthos = open(filtered_ortho_file, 'w')
+    for ncar_num, ncar_seqs in ortho_dic.items():
+        outfile = open("%s/ncar_%s.fasta" % (outdir, ncar_num), 'w')
+        new_seq_list = []
+        good_count = 0
+        for species, seq in ncar_seqs.items():
+            if len(seq_dic[species][seq]) < 1000:
+                good_count += 1
+        if good_count < min_taxa:
+            continue
+        for species, seq in ncar_seqs.items():
+            if len(seq_dic[species][seq]) < 1000:
+                outfile.write(">%s\n%s\n" % (seq, seq_dic[species][seq]))
+                new_seq_list.append(seq)
+        new_orthos.write("NA\t%s\t%s\t%s\n" % (ncar_num, len(new_seq_list), ",".join(new_seq_list)))
+        outfile.close()
+    new_orthos.close()
+
 def get_og_num(query_gene, ortho_dic):
     species = query_gene[0:4]
 #    query_gene = query_gene + "-RA"
@@ -155,18 +192,98 @@ def make_og_gene_map(ortho_dic):
                 og_map[gene[0:-3]] = og_num
     return og_map
 
-def read_species_pickle(target_species):
+def read_species_pickle(target_species, pickle_dir, gene_or_ncar):
 #    pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species), 'rb')
-    pickle_file = open("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'rb')
+#    pickle_file = open("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'rb')
+    pickle_file = open("%s/%s_%s_vcf_dic.pickle" % (pickle_dir, target_species, gene_or_ncar), 'rb')
     gene_objects = pickle.load(pickle_file)
     pickle_file.close()
     return gene_objects
 
-def get_species_data(target_species, num_threads, basedir):
+def harvest_ncar_worker(attribute_list):
+    cur_ncar = attribute_list[0]
+#    if gene_name not in ["LZEP_01797"]:
+#        return
+    scaf_seq = attribute_list[1]
+    target_species = attribute_list[2]
+    vcf_reader = vcf.Reader(filename = "/Genomics/kocherlab/berubin/Dropbox/data/freebayes_v2.1/%s_filtered_miss.vcf.gz" % (target_species))
+#    vcf_reader = vcf.Reader(filename = "/Genomics/kocherlab/berubin/Dropbox/data/freebayes_v2.1/%s_chr_7_11143675_11696910.vcf" % target_species)
+    cur_ncar.set_sequence(scaf_seq, 0)
+    cur_ncar.get_genotypes(vcf_reader, 0)
+    return cur_ncar
+
+
+def get_species_ncar_data(target_species, num_threads, basedir, ncar_gff, genome_fasta, ortho_dic, gene_dic, pickle_dir):
+#    if os.path.exists("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_ncar_vcf_dic.pickle" % (target_species, target_species)):
+    if os.path.exists("%s/%s_ncar_vcf_dic.pickle" % (pickle_dir, target_species)):
+        print "%s NCAR pickle exists" % target_species
+        return
+    print "Building %s NCAR pickle" % target_species
+    seq_dic = {}
+    reader = SeqIO.parse(genome_fasta, format = 'fasta')
+    for rec in reader:
+        seq_dic[rec.id] = str(rec.seq)
+    print "genome read"
+    all_ncars_list = []
+    for og_num, ncar_dic in ortho_dic.items():
+#        all_ncars_list = all_ncars_list + ncar_dic[target_species]
+        if not ncar_dic.get(target_species, None) == None:
+            all_ncars_list.append(ncar_dic[target_species])
+    gff_file = open(ncar_gff, 'rU')
+    print "read gff"
+    ncar_list = []
+    pool = multiprocessing.Pool(processes = num_threads)
+    work_list = []
+
+    for line in gff_file:
+        cur_line = line.split()
+        cur_scaf = cur_line[0]
+        if cur_scaf != "LZEP_chr_7":
+            continue
+        cur_start = int(cur_line[3])
+        cur_end = int(cur_line[4])
+#        if cur_start < 11143675 or cur_end > 11696910:
+#            continue
+        cur_strand = cur_line[6]
+        cur_name = cur_line[8].split(";")[0].split("ID=")[1]
+        if cur_name not in all_ncars_list:
+            print "not in orthodic: %s" % cur_name
+            continue
+        if cur_end - cur_start > 1000:
+            print "too long: %s" % cur_name
+            continue
+        cur_ncar = NCAR(cur_name, cur_scaf, cur_start, cur_end, cur_strand)
+        work_list.append([cur_ncar, seq_dic[cur_scaf], target_species])
+#        harvest_ncar_worker([cur_ncar, seq_dic[cur_scaf], target_species])
+    ncar_list = pool.map(harvest_ncar_worker, work_list)
+    pool.close()
+    pool.join()
+    neighbor_work = []
+    for ncar in ncar_list:
+        ncar.set_neighbors(gene_dic.values())
+    print "ncar data gotten"
+    print str(datetime.datetime.now())
+    print len(ncar_list)
+    all_samples = []
+    ncar_objects = {}
+    for ncar in ncar_list:
+        ncar_objects[ncar.name] = ncar
+        for sample_dic in ncar.sample_gts.values():
+            for sample in sample_dic.keys():
+                all_samples.append(sample)
+            all_samples = list(set(all_samples))
+    print "Dumping %s pickle" % target_species
+    pickle_file = open("%s/%s_ncar_vcf_dic.pickle" % (pickle_dir, target_species), 'wb')
+    pickle.dump(ncar_objects, pickle_file)
+    pickle_file.close()
+    sys.exit()
+
+def get_species_data(target_species, num_threads, basedir, ingenome, coding_gff, pickle_dir):
     #This is a big method. Harvests gene coordinates from GFF3 files
     #and creates Gene objects with all of their characteristics.
 #    if os.path.exists("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species)):
-    if os.path.exists("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species)):
+#    if os.path.exists("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species)):
+    if os.path.exists("%s/%s_gene_vcf_dic.pickle" % (pickle_dir, target_species)):
         print "%s pickle exists" % target_species
         return
 #        pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'rb')
@@ -176,30 +293,32 @@ def get_species_data(target_species, num_threads, basedir):
 #        pickle_file.close()
 #        return gene_objects
     print "Building %s pickle" % target_species
-    official_dir = "/Genomics/kocherlab/berubin/official_release_v2.1"
+#    official_dir = "/Genomics/kocherlab/berubin/official_release_v2.1"
     seq_dic = {}
 #    if target_species == "LALB":
 #        reader = SeqIO.parse("%s/%s/%s_v3/%s/%s_genome_v3.0.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
-    if target_species in ["BIMP", "PMIB"]:
-        reader = SeqIO.parse("%s/%s/%s_genome_v2.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
-    else:
-        reader = SeqIO.parse("%s/%s/%s_genome_v2.1.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+#    if target_species in ["BIMP", "PMIB"]:
+#        reader = SeqIO.parse("%s/%s/%s_genome_v2.0.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+#    else:
+#        reader = SeqIO.parse("%s/%s/%s_genome_v2.1.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+    reader = SeqIO.parse(ingenome, format = 'fasta')
     for rec in reader:
         seq_dic[rec.id] = str(rec.seq)
     cds_dic = {}
 #    if target_species == "LALB":
 #        reader = SeqIO.parse("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.cds.fasta" % (official_dir, target_species, target_species, target_species, target_species), format = 'fasta')
 #    else:
-    reader = SeqIO.parse("%s/%s/%s_OGS_v2.1_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
+#    reader = SeqIO.parse("%s/%s/%s_OGS_v2.1_longest_isoform.cds.fasta" % (official_dir, target_species, target_species), format = 'fasta')
 
-    for rec in reader:
-        cds_dic[rec.id[:-3]] = str(rec.seq)
+#    for rec in reader:
+#        cds_dic[rec.id[:-3]] = str(rec.seq)
 
 #    gff_file = gffParser(open("%s/%s/%s_testset.gff3" % (official_dir, target_species, target_species), 'rU'))
 #    if target_species == "LALB":
 #        gff_file = gffParser(open("%s/%s/%s_v3/%s/%s_OGS_v1.0_longest_isoform.gff3" % (official_dir, target_species, target_species, target_species, target_species), 'rU'))
 #    else:
-    gff_file = gffParser(open("%s/%s/%s_OGS_v2.1_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
+#    gff_file = gffParser(open("%s/%s/%s_OGS_v2.1_longest_isoform.gff3" % (official_dir, target_species, target_species), 'rU'))
+    gff_file = gffParser(open(coding_gff, 'rU'))
     print "read gff"
 #    gff_file = gffParser(open("%s/%s/%s_09600.gff3" % (official_dir, target_species, target_species), 'rU'))
     print "get gene data"
@@ -217,7 +336,8 @@ def get_species_data(target_species, num_threads, basedir):
     species_list = []
     for gene_name in gene_dic.keys():
 #        if gene_name == "APUR_11398": #"LZEP_05457":""LMAL_00737" or gene_name == "LLEU_03402":
-        work_list.append([gene_name, gene_dic, gff_file, seq_dic, target_species])
+        if gene_dic[gene_name][0] == "LZEP_chr_7":
+            work_list.append([gene_name, gene_dic, gff_file, seq_dic, target_species])
 #            harvest_worker([gene_name, gene_dic, gff_file, seq_dic, target_species])
     gene_list = pool.map(harvest_worker, work_list)
     pool.close()
@@ -237,7 +357,8 @@ def get_species_data(target_species, num_threads, basedir):
             all_samples = list(set(all_samples))
     print "Dumping %s pickle" % target_species
 #    pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species), 'wb')
-    pickle_file = open("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'wb')
+#    pickle_file = open("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'wb')
+    pickle_file = open("%s/%s_gene_vcf_dic.pickle" % (pickle_dir, target_species), 'wb')
     pickle.dump(gene_objects, pickle_file)
     pickle_file.close()
     if not os.path.exists("%s/pnps_files/" % (basedir)):
@@ -810,6 +931,38 @@ def fourfold_degenerate_string(attribute_list):
     align_potent_fourf = potential_aligned_fourfold_sites(inseq, outseq)
     
     return (fix_fourfold, in_poly_fourf, out_poly_fourf, in_potent_fourfold, out_potent_fourfold, align_potent_fourf, int(insample), int(outsample)), ("%s_4d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (og, 1.0, in_potent_fourfold, out_potent_fourfold, align_potent_fourf, int(insample), int(outsample), in_poly_fourf, out_poly_fourf, fix_fourfold))
+
+def ingene_fourfold_degenerate_string(attribute_list):
+    #returns two tuples of data about the fourfold degenerate
+    #sites in a particular gene alignment. the first two is a set of
+    #data that will be used for HKAdirect. The second tuple is just
+    #a single string formatted for use by Hey's HKA
+    ingene = attribute_list[0]
+    inspecies = attribute_list[1]
+    inseq = attribute_list[2]
+    outseq = attribute_list[3]
+    fix_fourfold = count_fourfold(inseq, outseq, ingene)
+    in_poly_fourf = ingene.fourfold
+    in_potent_fourfold = ingene.potent_fourfold
+    align_potent_fourf = potential_aligned_fourfold_sites(inseq, outseq)
+    
+    return fix_fourfold, in_poly_fourf, in_potent_fourfold, align_potent_fourf
+
+def sum_ingene_fourfs(fourf_list):
+    #sums all of the variables for fourfold degenerate sites
+    #across a bunch of genes and makes them into a string
+    #for HKAdirect
+    fix_fourfold = in_poly_fourf = in_potent_fourfold = align_potent_fourf = 0
+    x = 0
+    num_loci = 0.0
+    for fourf_stats in fourf_list:
+        fix_fourfold += fourf_stats[0]
+        in_poly_fourf += fourf_stats[1]
+        in_potent_fourfold += fourf_stats[3]
+        align_potent_fourf += fourf_stats[5]
+        num_loci += 1
+    return float(in_poly_fourf), float(fix_fourfold), float(in_potent_fourfold), float(align_potent_fourf)
+
     
 def sum_fourf_list(fourf_list):
     #sums all of the variables for fourfold degenerate sites
@@ -901,9 +1054,12 @@ def get_prank_aligned_seqs(align_dir, og_num, inspecies, outspecies):
             outseq_name = rec.id[:-3]
     return inseq, outseq
 
-def get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies):
+def get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies, gene_or_ncar):
     #get the aligned sequences for two species in a particular OG
-    reader = SeqIO.parse("%s/og_cds_%s.afa" % (align_dir, og_num), format = 'fasta')
+    if gene_or_ncar == "gene":
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % (align_dir, og_num), format = 'fasta')
+    elif gene_or_ncar == "ncar":
+        reader = SeqIO.parse("%s/ncar_%s.afa" % (align_dir, og_num), format = 'fasta')
     for rec in reader:
         if rec.id[0:4] == inspecies:
             inseq = str(rec.seq)
@@ -912,6 +1068,17 @@ def get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies):
             outseq = str(rec.seq)
             outseq_name = rec.id[:-3]
     return inseq, outseq
+
+def get_fsa_aligned_dic(align_dir, og_num, gene_or_ncar):
+    #get the aligned sequences for two species in a particular OG
+    if gene_or_ncar == "ncar":
+        reader = SeqIO.parse("%s/ncar_%s.afa" % (align_dir, og_num), format = 'fasta')
+    elif gene_or_ncar == "gene":
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % (align_dir, og_num), format = 'fasta')
+    seq_dic = {}
+    for rec in reader:
+        seq_dic[rec.id[0:4]] = str(rec.seq)
+    return seq_dic
 
 
 def get_prank_aligned_dic(align_dir, og_num):
@@ -1258,6 +1425,89 @@ def prop_shared_sequence(inseq, outseq):
 #    else:
     return inshared
 
+def ncar_pairwise_diff_count(inspecies, seq1, seq2, in_ncar):
+    in_ncar_alt_dic = in_ncar.coding_fixed_align(seq1)    
+    x = 0
+    same_base = 0
+    diff_base = 0
+    while x < len(seq1):
+        if seq1[x] in ["N", "-"] or seq2[x] in ["N","-"]:
+            x += 1
+            continue
+        seq1_bases = [seq1[x]]
+        if in_gene_alt_dic.get(x, "None") != None:
+            seq1_bases.append(str(in_gene_alt_dic[x]).upper())
+        if seq2[x] in seq1_bases:
+            same_base += 1
+        else:
+            diff_base += 1
+            x += 1
+    return same_base, diff_base
+        
+        
+        
+def ncar_mk_test(inspecies, outspecies, ortho_dic, align_dir, anc_dir, basedir, num_threads, min_taxa, ingff, ingenome, coding_gff, pickle_dir, coding_ortho_dic, coding_anc_dir, coding_align_dir):
+    if not os.path.exists("%s/ncar_mk_tests/" % (basedir)):
+        os.mkdir("%s/ncar_mk_tests/" % (basedir))
+    outfile = open("%s/ncar_mk_tests/%s_%s_mk.txt" % (basedir, inspecies, outspecies), 'w')
+
+    get_species_data(inspecies, num_threads, basedir, ingenome, coding_gff, pickle_dir)
+    in_gene_dic = read_species_pickle(inspecies, pickle_dir, "gene")
+    print "%s gene pickle read" % inspecies
+    get_species_ncar_data(inspecies, num_threads, basedir, ingff, ingenome, ortho_dic, in_gene_dic, pickle_dir)
+    in_ncar_dic = read_species_pickle(inspecies, pickle_dir, "ncar")
+    og_map_dic = make_og_gene_map(coding_ortho_dic)
+    not_enough_neighbors = 0
+    for ncar_num, species_gene_dic in ortho_dic.items():
+        if len(species_gene_dic.keys()) < min_taxa:
+            continue
+        inspecies_gene = ortho_dic[ncar_num][inspecies]
+        outspecies_gene = ortho_dic[ncar_num][outspecies]
+        inseq, outseq = get_fsa_aligned_seqs(align_dir, ncar_num, inspecies, outspecies, "ncar")
+        node_index_dic, node_seqs = read_ancestral_seq("%s/ncar_%s_working/rst" % (anc_dir, og_num))
+        seq_dic = get_fsa_aligned_dic(align_dir, og_num, "ncar")
+        nearest_anc = get_nearest_anc(node_index_dic, seq_dic)
+        inseq = seq_dic[inspecies]
+        outseq = node_seqs[nearest_anc[inspecies]]
+        if prop_shared_sequence(inseq, outseq) < 0.9:
+            continue
+        in_ncar = in_ncar_dic[ncar_num]
+        same_base, diff_base = ncar_pairwise_diff_count(inspecies, inseq, outseq, in_ncar)
+        in_poly = in_ncar.poly_count
+        neighbor_dic = {}
+        for neighbor_name in in_gene.neighbors:
+            if in_gene_dic.get(neighbor_name, None) == None:
+                print "%s not in gene dictionary" % neighbor_name
+                continue
+            if og_map_dic.get(neighbor_name, None) == None:
+                print "%s not in orthology dictionary" % neighbor_name
+                continue
+            if check_og_complete(neighbor_og, inspecies, outspecies, coding_ortho_dic):
+                outneighbor_name = ortho_dic[neighbor_og][outspecies][0][:-3]
+                neighbor_dic[neighbor_og] = in_gene_dic[neighbor_name]
+        if len(neighbor_dic) < 4:
+            not_enough_neighbors += 1
+            continue
+
+        neighbor_stats_list = []
+        direct_stats_list = []
+        for neighbor_og, neighbor in neighbor_dic.items():
+            node_index_dic, node_seqs = read_ancestral_seq("%s/og_%s_working/rst" % (anc_dir, neighbor_og))
+            seq_dic = get_fsa_aligned_dic(coding_align_dir, og_num, "gene")
+            nearest_anc = get_nearest_anc(node_index_dic, seq_dic)
+            outseq = node_seqs[nearest_anc[inspecies]]
+            inseq = seq_dic[inspecies]
+            neighbor_stats = ingene_fourfold_degenerate_string([neighbor, inspecies, inseq, outseq])
+            neighbor_stats_list.append(neighbor_stats)
+        in_poly_fourf, fix_fourfold, in_potent_fourfold, align_potent_fourf = sum_ingene_fourfs(neighbor_stats_list)
+        
+        alpha = 1 - ((fix_fourfold*inpoly) / (diff_base*in_poly_fourf))
+        neutrality_index = (in_poly / in_poly_fourf) / (diff_base / fix_fourfold)
+        odds_rat, pval = scipy.stats.fisher_exact([[fix_fourfold, in_poly_fourf],[diff_base, in_poly]])
+        outfile.write("NCAR_%s\t%s\t%s\t%s\t%s\%s\t%s\t1\t%s\t%s\t%s\t%s\t%s\n" % (ncar_num, in_poly, diff_base, in_poly_fourf, fix_fourfold, in_car.potent_count(), align_potent_fourf, in_ncar.average_n, alpha, neutrality_index, odds_rat, pval))
+    print "not enough neighbors: %s" % not_enough_neighbors
+    outfile.close()
+
 def mk_test(inspecies, outspecies, ortho_dic, align_dir, anc_dir, out_path, num_threads, min_taxa):
     get_species_data(inspecies, num_threads, out_path)
 #    sys.exit()
@@ -1444,6 +1694,18 @@ def trim_phylo_hyphy(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     outfile.close()
 
 
+def trim_phylo_ancestral_hyphy(taxa_list, orthogroup, outdir, phylogeny_file):
+    #trims taxa and adds foreground tags for HYPHY analysis tree
+    tree = PhyloTree(phylogeny_file, format = 1)
+    tree.prune(taxa_list, preserve_branch_length = True)
+    tree.unroot()
+    tree_str = tree.write(format = 3)
+    tree_str = tree_str.replace("NoName", "")
+    outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
+    outfile.write(tree_str)
+    outfile.close()
+
+
 def rename_tree(seqfile, outname, phylogeny_file):
     #trims taxa and renames tips to match sequence names (mostly for prank)
     name_dic = {}
@@ -1492,8 +1754,11 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
         else:
             reader = SeqIO.parse("%s/og_cds_%s.afa-gb" % ( indir, orthogroup), format = 'fasta')
     else:
-        if foreground == "ancestral":
-            reader = SeqIO.parse("%s/og_cds_%s.afa" % ( indir, orthogroup), format = 'fasta')
+        if test_type == "ancestral":
+            if foreground == "ncar":
+                reader = SeqIO.parse("%s/ncar_%s.afa" % ( indir, orthogroup), format = 'fasta')
+            else:
+                reader = SeqIO.parse("%s/og_cds_%s.afa" % ( indir, orthogroup), format = 'fasta')
         elif foreground == "yn":
             reader = SeqIO.parse("%s/og_cds_%s.afa" % ( indir, orthogroup), format = 'fasta')
             tree_prep = False
@@ -1515,7 +1780,10 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     if terminals:
         if foreground not in taxa_list:
             return False
-    outfile = open("%s/og_cds_%s.afa" % (outdir, orthogroup), 'w')
+    if foreground == "ncar":
+        outfile = open("%s/ncar_%s.afa" % (outdir, orthogroup), 'w')
+    else:
+        outfile = open("%s/og_cds_%s.afa" % (outdir, orthogroup), 'w')
     if foreground == "aaml_blengths":
         outfile.write("%s %s\n" % (len(seq_dic), len(rec.seq) / 3))
     elif test_type != "RELAX":
@@ -1538,7 +1806,8 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     if tree_prep:
         if test_type == "RELAX":
             if foreground == "INTREE":
-                shutil.copyfile(phylogeny_file, "%s/og_%s.tree" % (outdir, orthogroup))
+#                shutil.copyfile(phylogeny_file, "%s/og_%s.tree" % (outdir, orthogroup))
+                trim_phylo_ancestral_hyphy(taxa_list, orthogroup, outdir, phylogeny_file)
             else:
                 trim_phylo_hyphy(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
         else:
@@ -2530,8 +2799,11 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                 print "OG %s appears to have unexpected stop codons" % cur_og
                 continue
         elif test_type == "ancestral":
-            cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
-            prep_paml_files(cur_og, indir, outdir, "ancestral", phylogeny_file, test_type, min_taxa, use_gblocks)
+            if foreground == "ncar":
+                cur_out_dir = "%s/ncar_%s" % (outdir, cur_og)
+            else:
+                cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
+            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "aaml_blengths":
             prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "RELAX":
@@ -2561,7 +2833,10 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
     elif test_type == "free":
         pool.map_async(paml_tests.free_ratios_worker, work_list).get(9999999)
     elif test_type == "ancestral":
-        pool.map_async(paml_tests.ancestor_reconstruction, work_list).get(9999999)
+        if foreground == "ncar":
+            pool.map_async(paml_tests.ncar_ancestor_reconstruction, work_list).get(9999999)            
+        else:
+            pool.map_async(paml_tests.ancestor_reconstruction, work_list).get(9999999)
     elif test_type == "aaml_blengths":
         pool.map_async(paml_tests.aaml_worker, work_list).get(9999999)
     elif test_type == "RELAX":
@@ -2627,6 +2902,33 @@ def count_fourfold(seq1, seq2, in_gene, out_gene):
                         fourfold_count += 1
         x = x + 3
     return fourfold_count
+
+def count_ingene_fourfold(seq1, seq2, in_gene):
+    #counts the number of differences at fourfold degenerate sites
+    #in two sequences. Takes into account the fourfold degenerate
+    #polymorphisms in both sequences so as not to overcount divergence
+    fourfold_list = changes.fourfold_codons()
+    empty_chars = ["N", "-", "X"]
+    x = 0
+    fourfold_count = 0
+    in_gene_alt_dic = in_gene.coding_fixed_align(seq1)
+    while x < len(seq1):
+        if seq1[x:x+3] in fourfold_list:
+            if seq1[x:x+2] == seq2[x:x+2]:
+                if seq1[x+2] != seq2[x+2]:
+                    in_alt_list = [seq1[x+2]]
+                    out_alt_list = [seq2[x+2]]
+                    if x+2 in in_gene_alt_dic.keys():
+                        in_alt_list.append(in_gene_alt_dic[x+2])
+                    overlap = False
+                    for nuc in in_alt_list:
+                        if nuc in out_alt_list:
+                            overlap = True
+                    if not overlap:
+                        fourfold_count += 1
+        x = x + 3
+    return fourfold_count
+
 
 def prank_align_worker(og_file, outdir, use_backbone, phylogeny_file):
     #the worker method for multiprocessing the prank alignments
@@ -2697,6 +2999,30 @@ def fsa_coding_align(og_list, indir, outdir, num_threads, iscoding):
             work_list.append([og_file, outdir, iscoding])
     pool.map_async(fsa_align_worker, work_list).get(9999999)
 
+def fsa_ncar_align(og_list, indir, outdir, num_threads, iscoding): 
+    #run fsa alignments
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    og_file_list = []
+    pool = multiprocessing.Pool(processes = num_threads)
+    work_list = []
+    for og in og_list:
+        already_done = False
+        if os.path.exists("%s/ncar_%s.afa" % (outdir, og)): #check whether the alignment of this OG has already occurred. If so, it won't redo it. This is handy in case the orthogroup alignment crashes at some point.
+            reader = SeqIO.parse("%s/ncar_%s.afa" % (outdir, og), format = 'fasta')
+            counter = 0
+            for rec in reader:
+                counter += 1
+                if counter >= 2:
+                    already_done = True
+                    break
+        if not already_done:
+            og_file = "%s/ncar_%s.fasta" % (indir, og)
+#            fsa_align_worker([og_file, outdir, iscoding])
+            work_list.append([og_file, outdir, iscoding])
+    pool.map_async(fsa_align_worker, work_list).get(9999999)
+
+
 def fsa_align_worker(param_list):
     og_file = param_list[0]
     outdir = param_list[1]
@@ -2704,9 +3030,13 @@ def fsa_align_worker(param_list):
     #the worker method for multiprocessing the fsa alignments
     STOP_CODONS = ["TGA", "TAA", "TAG"]
     cur_og = og_file.split("/")[-1]
-    og_num = cur_og.split("_")[2].split(".fa")[0]
+#    og_num = cur_og.split("_")[2].split(".fa")[0]
+    og_num = cur_og.split("_")[-1].split(".fa")[0]
     reader = SeqIO.parse(og_file, format = 'fasta')
-    form_og_file = "%s/og_cds_%s.fa" % (outdir, og_num)
+    if iscoding:
+        form_og_file = "%s/og_cds_%s.fa" % (outdir, og_num)
+    else:
+        form_og_file = "%s/ncar_%s.fa" % (outdir, og_num)
     seqs_formatted = open(form_og_file, 'w')
     for rec in reader:
         cur_seq = str(rec.seq)
@@ -2721,10 +3051,17 @@ def fsa_align_worker(param_list):
     else:
         cmd = ["/Genomics/kocherlab/berubin/local/src/fsa-1.15.9/bin/fsa", "%s" % form_og_file]
     FNULL = open(os.devnull, 'w')
-    with open("%s/og_cds_%s.afa" % (outdir, og_num), 'w') as outfile:
-        subprocess.call(cmd, stdout = outfile, stderr = FNULL)
-    gblock("%s/og_cds_%s.afa" % (outdir, og_num))
-    trimal_automated("%s/og_cds_%s.afa" % (outdir, og_num), "%s/og_cds_%s.afa.trimal" % (outdir, og_num))
+    if iscoding:
+        with open("%s/og_cds_%s.afa" % (outdir, og_num), 'w') as outfile:
+            subprocess.call(cmd, stdout = outfile, stderr = FNULL)
+        gblock("%s/og_cds_%s.afa" % (outdir, og_num))
+        trimal_automated("%s/og_cds_%s.afa" % (outdir, og_num), "%s/og_cds_%s.afa.trimal" % (outdir, og_num))
+
+    else:
+        with open("%s/ncar_%s.afa" % (outdir, og_num), 'w') as outfile:
+            subprocess.call(cmd, stdout = outfile, stderr = FNULL)
+#        gblock("%s/ncar_%s.afa" % (outdir, og_num))
+#        trimal_automated("%s/ncar_%s.afa" % (outdir, og_num), "%s/ncar_%s.afa.trimal" % (outdir, og_num))
     print "%s alignment complete" % og_num
     return
 

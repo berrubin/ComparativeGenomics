@@ -1,6 +1,7 @@
 from Bio.Phylo.PAML import yn00
 from Bio import SeqIO
 from Bio.Phylo.PAML import codeml
+from Bio.Phylo.PAML import baseml
 import subprocess
 import os
 
@@ -101,6 +102,15 @@ def ancestor_reconstruction(orthogroup, workingdir):
     cml.set_options(NSsites=[0])
     cml.print_options()
     cml.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/codeml", verbose = True)
+
+def ncar_ancestor_reconstruction(param_list):
+    orthogroup = param_list[0]
+    workingdir = param_list[1]
+    print workingdir
+    print orthogroup
+    cml = baseml.Baseml(alignment = "%s/ncar_%s.afa" % (workingdir, orthogroup), tree = "%s/og_%s.tree" % (workingdir, orthogroup), out_file = "%s/ncar_%s.anc" % (workingdir, orthogroup), working_dir = "%s/ncar_%s_working" % (workingdir, orthogroup))
+    cml.set_options(runmode=0,fix_blength=0, model=7, clock = 0, Mgene = 0, fix_kappa = 0, kappa = 2, getSE = 0, RateAncestor = 1, cleandata = 0, Small_Diff = .45e-6, verbose = True)
+    cml.run(command = "/Genomics/kocherlab/berubin/local/src/paml4.9e/bin/baseml", verbose = True)
 
 
 def pairwise_yn(orthogroup, workingdir):

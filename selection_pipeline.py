@@ -14,6 +14,7 @@ parser.add_option("-o", "--prefix", dest = "prefix", type = str, help = "String 
 parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Output directory.")
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int, default = 4)
 parser.add_option("-r", "--ortho_file", dest = "ortho_file", type = str, default = "Orthogroups.txt", help = "File of orthologous groups.")
+parser.add_option("--ncar_ortho_file", dest = "ncar_ortho_file", type = str, help = "File of orthologous NCARs.")
 parser.add_option("-e", "--tree_file", dest = "tree_file", type = str, default = "species.tree", help = "Phylogeny of species examined.")
 parser.add_option("-a", "--action", dest = "action", type = str, help = "Analysis to do", default = "paml")
 parser.add_option("-i", "--inspecies", dest = "inspecies", type = str, help = "Species of interest in pairwise analyses")
@@ -25,6 +26,9 @@ parser.add_option("-g", "--no_gblocks", dest = "use_gblocks", action = "store_fa
 parser.add_option("--no_paralogs", dest = "no_paralogs", action = "store_true", default = False, help = "Should all paralogs be discarded immediately?")
 parser.add_option("-c", "--foreground", dest = "foreground", type = str, default = "", help = "Foreground taxa for selection test")
 parser.add_option("-d", "--param_file", dest = "param_file", type = str, default = "halictids.params")
+parser.add_option("--gff_params", dest = "gff_params", type = str, default = "halictids_gff.params", help = "File with paths to coding GFF files")
+parser.add_option("--ncar_gff_params", dest = "ncar_gff_params", type = str, default = "halictids_ncar_gff.params", help = "File with paths to ncar GFF files")
+parser.add_option("--genome_params", dest = "genome_params", type = str, default = "halictid_genomes.params", help = "File with paths to genome files")
 parser.add_option("-j", "--rerconverge_output", dest = "rerconverge_output", type = "str", default = "", help = "Output file from RERconverge")
 parser.add_option("-w", "--orthofile_format", dest = "orthofile_format", type = "str", default = "orthofinder", help = "Format of orthofile.")
 parser.add_option("--nogap_min_count", dest = "nogap_min_count", type = int, default = 8, help = "The minimum number of sequences in an alignment that are not gaps in an individual column.")
@@ -39,6 +43,7 @@ parser.add_option("--taxa_inclusion", dest = "taxa_inclusion", type = str, help 
 parser.add_option("--go_database", dest = "go_database", type = str, help = "File with GO terms mapped to orthogroup names")
 parser.add_option("--goa_forefile", dest = "goa_forefile", type = str, help = "File listing focal orthogroups to be tested against the background for GO enrichment")
 parser.add_option("--goa_backfile", dest = "goa_backfile", type = str, help = "File listing background orthogroups to be used for GO enrichment")
+parser.add_option("--pickle_dir", dest = "pickle_dir", type = str, help = "Directory for storing gff/vcf data pickles")
 
 (options, args) = parser.parse_args()
 
@@ -66,6 +71,14 @@ def main():
         print "Exiting"
         sys.exit()
 
+    if options.action == "write_ncars":
+        ncar_dic = utils.read_params(options.param_file)
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        seq_dic = utils.get_cds_files(ncar_dic)
+        index_file = "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix)
+        utils.write_ncars(ortho_dic, seq_dic, "%s/%s_ncars" % (options.base_dir, options.prefix), options.min_taxa, index_file)
+        sys.exit()
+
 ###Align coding sequences and concatenate all protein sequences into 
 ###an aligned matrix that can be input into RAxML to make a phylogeny.
     if options.action == "align_coding":
@@ -81,6 +94,44 @@ def main():
         utils.concatenate_for_raxml("%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
         print "If you would like to run a phylogenetic analysis, a concatenated amino acid sequence matrix of all orthogroups including all %s of the species in your study has been written to %s/%s.afa" % (len(cds_dic.keys()), options.base_dir, options.prefix)
         print "Exiting"
+        sys.exit()
+
+    if options.action == "align_ncars":
+        iscoding = False
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ncar_list = ortho_dic.keys()
+        utils.fsa_ncar_align(ncar_list, "%s/%s_ncars" % (options.base_dir, options.prefix), "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), options.num_threads, iscoding)
+        sys.exit()
+        
+    if options.action == "ncar_ancestor":
+        test_type = "ancestral"
+        foreground = "ncar"
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ncar_list = ortho_dic.keys()
+#        ncar_list = [10510, 10513, 17170, 17388, 17389, 23400]
+        utils.paml_test(ncar_list, foreground, test_type,"%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, [])
+        sys.exit()
+    
+    if options.action == "coding_ancestor":
+        test_type = "ancestral"
+        foreground = "gene"
+        ortho_dic = utils.read_orthofile(options.ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        paras_allowed = True
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, [])
+        sys.exit()
+
+    if options.action == "ncar_mk":
+        ncar_gff_dic = utils.read_params(options.ncar_gff_params)
+        ncar_gff_file = ncar_gff_dic[options.inspecies]
+        coding_gff_dic = utils.read_params(options.ncar_gff_params)
+        coding_gff_file = coding_gff_dic[options.inspecies]
+        genome_dic = utils.read_params(options.genome_params)
+        genome_file = genome_dic[options.inspecies]
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file)
+        coding_ortho_dic = utils.read_orthofile(options.ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        pickle_dir = options.pickle_dir
+        utils.ncar_mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_ncar_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, ncar_gff_file, genome_file, coding_gff_file, pickle_dir, coding_ortho_dic, "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix))
         sys.exit()
 
     if options.action == "alignment_filter":
@@ -153,9 +204,10 @@ def main():
         print len(og_list)
         if options.foreground == "INTREE":
             fore_list = "INTREE"
-            cur_og_list = og_list
+#            cur_og_list = og_list
         else:
             fore_list = options.foreground.split(",")
+#        og_list = [10724, 11488, 12704, 13036, 13879, 15282]
         utils.paml_test(og_list, fore_list, test_type, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
         utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir, options.foreground)
         sys.exit()
