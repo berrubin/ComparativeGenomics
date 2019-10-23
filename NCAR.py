@@ -161,6 +161,27 @@ class NCAR:
             else:
                 aligned_vars[new_coord] = str(Seq.Seq(str(region_alt_dic[k])).reverse_complement())
         return aligned_vars
+
+
+    def noncoding_fixed_align(self, aligned_seq):
+        #get all of the polymorphisms in the aligned CDS and return
+        #a dictionary where the indices have been adjusted to represent
+        #the positions in the alignment
+        region_alt_dic = {}
+        ncar_tuple = (self.start, self.end)
+        for k in self.alts.keys():
+            if k >= ncar_tuple[0] and k < ncar_tuple[1]:
+                region_alt_dic[k] = self.alts[k]
+        aligned_vars = {}
+        zeroed_tuples = self.zeroed_tuples([ncar_tuple])
+        for k in region_alt_dic.keys():
+            old_coord = k
+            new_coord = self.new_coding_coord(aligned_seq, [ncar_tuple], zeroed_tuples, old_coord)
+            if self.strand == 1:
+                aligned_vars[new_coord] = region_alt_dic[k]
+            else:
+                aligned_vars[new_coord] = str(Seq.Seq(str(region_alt_dic[k])).reverse_complement())
+        return aligned_vars
                     
 
     def set_neighbors(self, gene_list):
@@ -226,11 +247,11 @@ class NCAR:
         try:
             reader = vcf_reader.fetch(self.scaf, self.start, self.end)
         except ValueError:
-            print "can't get that bit of vcf"
+            print "can't get that bit of vcf: %s" % self.name
             self.alts = {}
             self.refs = {}
             self.called_counts = {}
-            self.potential_sites()
+#            self.potential_sites()
             return
         scaf_len = vcf_reader.contigs[self.scaf][1]
         gene_sample_dic = {}
@@ -278,3 +299,4 @@ class NCAR:
         self.refs = {}
         self.poly_count = len(self.alts)
         self.poly_coords = self.alts.keys()
+        self.called_counts = called_count

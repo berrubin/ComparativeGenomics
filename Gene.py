@@ -55,6 +55,14 @@ class Gene:
         self.sample_syn_counts = {}
         self.sample_nsyn_genod = {}
         self.sample_syn_genod = {}
+        self.low_impact_count = -1
+        self.hi_impact_count = -1
+        self.low_impact_coords = []
+        self.hi_impact_coords = []
+        self.sample_low_counts = {}
+        self.sample_hi_counts = {}
+        self.sample_low_genod = {}
+        self.sample_hi_genod = {}
  
     def get_new_coord(self, aligned_seq, old_coord):
         new_coord = old_coord
@@ -361,9 +369,14 @@ class Gene:
         syn_count = 0
         nsyn_count = 0
         fourfold_count = 0
+        low_impact_count = 0
+        hi_impact_count = 0
         nsyn_coords = []
         syn_coords = []
+        low_impact_coords = []
+        hi_impact_coords = []
         fourf_coords = []
+        aa_types_dic = changes.aa_types()
         for index in self.alts.keys():
             old_codon = ""
             new_codon = []
@@ -456,6 +469,13 @@ class Gene:
                         nsyn_count += 1
                         nsyn_coords.append(index)
                         temp_nsyn += 1
+                        if self.is_low_impact(old_aa, new_aa):
+                            low_impact_count += 1
+                            low_impact_coords.append(index)
+                        else:
+                            hi_impact_count += 1
+                            hi_impact_coords.append(index)
+                            
 #                        print index
 #                        print old_aa[aa]
 #                        print new_aa[aa]
@@ -479,8 +499,19 @@ class Gene:
 #        print syn_count
         self.syn_coords = syn_coords
         self.nsyn_coords = nsyn_coords
+        self.low_impact_count = low_impact_count
+        self.hi_impact_count = hi_impact_count
+        self.low_impact_coords = low_impact_coords
+        self.hi_impact_coords = hi_impact_coords
 #        self.fourf_coords = fourf_coords
 
+    def is_low_impact(self, old_aa, new_aa):
+        aa_types_dic = changes.aa_types()
+        low_impact = True
+        for position in range(len(old_aa)):
+            if aa_types_dic[old_aa[position]] != aa_types_dic[new_aa[position]]:
+                low_impact = False
+        return low_impact
 
     def check_fourfold(self, old_codon, new_codon):
         #check if two codons are fourfold degenerate sites of the same
@@ -586,19 +617,35 @@ class Gene:
         #These are the numbers of polymorphic sites where individuals are heterozygous
         sample_nsyn_counts = {}
         sample_syn_counts = {}
+        sample_low_counts = {}
+        sample_hi_counts = {}
         #Below are the numbers of polymorphic sites where an individual has been genotyped
         sample_nsyn_genod = {}
         sample_syn_genod = {}
+        sample_low_genod = {}
+        sample_hi_genod = {}
         for position, gt_dic in self.sample_gts.items():
             if position in self.nsyn_coords:
                 for sample, gt in gt_dic.items():
                     if sample_nsyn_counts.get(sample, None) == None:
                         sample_nsyn_counts[sample] = 0
                         sample_nsyn_genod[sample] = 0
+                        sample_hi_counts[sample] = 0
+                        sample_hi_genod[sample] = 0
+                        sample_low_counts[sample] = 0
+                        sample_low_genod[sample] = 0
                     if gt in ["0/1", "1/0"]:
                         sample_nsyn_counts[sample] += 1
+                        if position in self.low_impact_coords:
+                            sample_low_counts[sample] += 1
+                        elif position in self.hi_impact_coords:
+                            sample_hi_counts[sample] += 1
                     if gt in ["0/1", "1/0", "1/1", "0/0"]:
                         sample_nsyn_genod[sample] += 1
+                        if position in self.low_impact_coords:
+                            sample_low_genod[sample] += 1
+                        elif position in self.hi_impact_coords:
+                            sample_hi_genod[sample] += 1
             elif position in self.syn_coords:
                 for sample, gt in gt_dic.items():
                     if sample_syn_counts.get(sample, None) == None:
@@ -612,6 +659,10 @@ class Gene:
         self.sample_syn_counts = sample_syn_counts
         self.sample_nsyn_genod = sample_nsyn_genod
         self.sample_syn_genod = sample_syn_genod
+        self.sample_low_counts = sample_low_counts
+        self.sample_hi_counts = sample_hi_counts
+        self.sample_low_genod = sample_low_genod
+        self.sample_hi_genod = sample_hi_genod
 #        print sample_nsyn_counts
 #        print sample_syn_counts
 

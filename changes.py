@@ -63,3 +63,6 @@ def potent_dic():
 
 def fourfold_codons():
     return ["GCT", "GCC", "GCA", "GCG", "CGT", "CGC", "CGA", "CGG", "GGT", "GGC", "GGA", "GGG", "CTT", "CTC", "CTA", "CTG", "CCT", "CCC", "CCA", "CCG", "TCT", "TCC", "TCA", "TCG", "ACT", "ACC", "ACA", "ACG", "GTT", "GTC", "GTA", "GTG"]
+
+def aa_types(): #https://en.wikipedia.org/wiki/Conservative_replacement
+    return {'G': "aliphatic", 'A': "aliphatic", 'V': "aliphatic", 'L': "aliphatic", 'I': "aliphatic", 'S': "oxyl", 'C': "oxyl", 'U': "oxyl", 'T': "oxyl", 'M': "oxyl", 'P': "cyclic", 'F': "aromatic", 'Y': "aromatic", 'W': "aromatic", 'H': "basic", 'K': "basic", 'R': "basic", 'D': "acidic", 'E': "acidic", 'N': "acidic", 'Q': "acidic", "*": "stop"}

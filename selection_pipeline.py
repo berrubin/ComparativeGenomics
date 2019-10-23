@@ -9,7 +9,7 @@ parser = OptionParser()
 
 parser.add_option("-p", "--num_threads", dest = "num_threads", type = int, default = 1, help = "Number of cores to use.")
 parser.add_option("-m", "--min_og_group", dest = "min_og_group", type = int, default = 0, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers less than this number.")
-parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int, default = 100000, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers more than this number.")
+parser.add_option("-x", "--max_og_group", dest = "max_og_group", type = int, default = 10000000, help = "For limiting the number of OG's examined. Don't analyze those with OG numbers more than this number.")
 parser.add_option("-o", "--prefix", dest = "prefix", type = str, help = "String used at the beginning of output directories and files.")
 parser.add_option("-b", "--base_dir", dest = "base_dir", type = str, help = "Output directory.")
 parser.add_option("-t", "--min_taxa", dest = "min_taxa", type = int, default = 4)
@@ -44,6 +44,11 @@ parser.add_option("--go_database", dest = "go_database", type = str, help = "Fil
 parser.add_option("--goa_forefile", dest = "goa_forefile", type = str, help = "File listing focal orthogroups to be tested against the background for GO enrichment")
 parser.add_option("--goa_backfile", dest = "goa_backfile", type = str, help = "File listing background orthogroups to be used for GO enrichment")
 parser.add_option("--pickle_dir", dest = "pickle_dir", type = str, help = "Directory for storing gff/vcf data pickles")
+parser.add_option("--hyper_pop", dest = "hyper_pop", type = str, help = "All OGs under consideration (e.g. all OGs with human orthologs).")
+parser.add_option("--hyper_pop_cond", dest = "hyper_pop_cond", type = str, help = "All OGs with condition (e.g. all OGs with human orthologs with autism association")
+parser.add_option("--hyper_targets", dest = "hyper_targets", type = str, help = "Focal OGs (e.g. OGs evolving faster in social taxa).")
+parser.add_option("--hyper_targets_back", dest = "hyper_targets_back", type = str, help = "Focal OGs background (e.g. OGs included in test of rate changes).")
+
 
 (options, args) = parser.parse_args()
 
@@ -73,11 +78,20 @@ def main():
 
     if options.action == "write_ncars":
         ncar_dic = utils.read_params(options.param_file)
-        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, options.min_taxa) #this needs to be "filtered_loci.index" from the NCAR pipeline
         seq_dic = utils.get_cds_files(ncar_dic)
         index_file = "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix)
         utils.write_ncars(ortho_dic, seq_dic, "%s/%s_ncars" % (options.base_dir, options.prefix), options.min_taxa, index_file)
         sys.exit()
+
+    if options.action == "write_cnees":
+        ncar_dic = utils.read_params(options.param_file)
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, options.min_taxa) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        seq_dic = utils.get_cds_files(ncar_dic)
+        index_file = "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix)
+        utils.write_ncar_cnees(ortho_dic, seq_dic, "%s/%s_ncars" % (options.base_dir, options.prefix), options.min_taxa, index_file)
+        sys.exit()
+
 
 ###Align coding sequences and concatenate all protein sequences into 
 ###an aligned matrix that can be input into RAxML to make a phylogeny.
@@ -96,9 +110,17 @@ def main():
         print "Exiting"
         sys.exit()
 
+    if options.action == "fourfold_matrix":
+        cds_dic = utils.read_params(options.param_file)
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        paras_allowed = False
+        og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed) #Gets only those OGs that have a single sequence for every species in the study. This is for making a sequence matrix that can be used for phylogenetics.
+        utils.concatenate_fourf_for_raxml("%s/%s_gene_ancestral" % (options.base_dir, options.prefix), "%s/%s_fourfold.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
+        sys.exit()
+
     if options.action == "align_ncars":
         iscoding = False
-        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, options.min_taxa) #this needs to be "filtered_loci.index" from the NCAR pipeline
         ncar_list = ortho_dic.keys()
         utils.fsa_ncar_align(ncar_list, "%s/%s_ncars" % (options.base_dir, options.prefix), "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), options.num_threads, iscoding)
         sys.exit()
@@ -106,7 +128,7 @@ def main():
     if options.action == "ncar_ancestor":
         test_type = "ancestral"
         foreground = "ncar"
-        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, options.min_taxa)
         ncar_list = ortho_dic.keys()
 #        ncar_list = [10510, 10513, 17170, 17388, 17389, 23400]
         utils.paml_test(ncar_list, foreground, test_type,"%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, [])
@@ -115,23 +137,55 @@ def main():
     if options.action == "coding_ancestor":
         test_type = "ancestral"
         foreground = "gene"
-        ortho_dic = utils.read_orthofile(options.ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
-        paras_allowed = True
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        paras_allowed = True 
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, [])
+        utils.remove_aligned_paras(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_fsa_coding_noparas" % (options.base_dir, options.prefix), "%s/%s_ortho_noparas.index" % (options.base_dir, options.prefix))
+        index_file = "%s/%s_ortho_noparas.index" % (options.base_dir, options.prefix)
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, [])
         sys.exit()
 
     if options.action == "ncar_mk":
         ncar_gff_dic = utils.read_params(options.ncar_gff_params)
         ncar_gff_file = ncar_gff_dic[options.inspecies]
-        coding_gff_dic = utils.read_params(options.ncar_gff_params)
+        coding_gff_dic = utils.read_params(options.gff_params)
         coding_gff_file = coding_gff_dic[options.inspecies]
         genome_dic = utils.read_params(options.genome_params)
         genome_file = genome_dic[options.inspecies]
-        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file)
-        coding_ortho_dic = utils.read_orthofile(options.ortho_file) #this needs to be "filtered_loci.index" from the NCAR pipeline
+        ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, 4)
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        exclude_paras = True
+        ncar_list = utils.ncar_min_taxa_membership({(options.inspecies, options.outspecies) : 2}, {}, [], "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_ncar_ortho_dic = {}
+        for ncar in ncar_list:
+            good_ncar_ortho_dic[ncar] = ortho_dic[ncar]
+#        print good_ncar_ortho_dic["19393"]
+        if options.outspecies == "DNOV":
+            coding_outspecies = "Dnov"
+        else:
+            coding_outspecies = options.outspecies
+        og_list = utils.min_taxa_membership({(options.inspecies, coding_outspecies) : 2}, {}, [], "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_coding_ortho_dic = {}
+        for og in og_list:
+            good_coding_ortho_dic[og] = coding_ortho_dic[og]
         pickle_dir = options.pickle_dir
-        utils.ncar_mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_ncar_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, ncar_gff_file, genome_file, coding_gff_file, pickle_dir, coding_ortho_dic, "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix))
+        utils.ncar_mk_test(options.inspecies, options.outspecies, good_ncar_ortho_dic, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_ncar_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, ncar_gff_file, genome_file, coding_gff_file, pickle_dir, good_coding_ortho_dic, "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), "%s/%s_fsa_coding" % (options.base_dir, options.prefix))
+        sys.exit()
+
+    if options.action == "coding_mk":
+        coding_gff_dic = utils.read_params(options.gff_params)
+        coding_gff_file = coding_gff_dic[options.inspecies]
+        genome_dic = utils.read_params(options.genome_params)
+        genome_file = genome_dic[options.inspecies]
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        exclude_paras = True
+        og_list = utils.min_taxa_membership({(options.inspecies, options.outspecies) : 2}, {}, [], "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_coding_ortho_dic = {}
+        for og in og_list:
+            good_coding_ortho_dic[og] = coding_ortho_dic[og]
+        pickle_dir = options.pickle_dir
+        utils.mk_test(options.inspecies, options.outspecies, good_coding_ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, genome_file, coding_gff_file, pickle_dir)
         sys.exit()
 
     if options.action == "alignment_filter":
@@ -159,6 +213,30 @@ def main():
         print len(og_list)
         utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
         utils.read_aaml_phylos(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), "%s/aaml_compiled" % (options.base_dir), options.outputfile, options.min_taxa)
+        sys.exit()
+
+    if options.action == "ncar_rer_converge": #untested (5/18/19)
+        exclude_paras = True
+        foreground = "baseml_blengths"
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        ncar_list = utils.ncar_min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+
+        print len(ncar_list)
+#        ncar_list = ["ce99895"]
+        utils.baseml_blengths(ncar_list, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), options.tree_file, options.num_threads, remove_list)
+        utils.read_baseml_phylos(ncar_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), "%s/baseml_compiled" % (options.base_dir), options.outputfile)
+        sys.exit()
+
+
+
+    if options.action == "acacia_rescue":
+        index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
+        test_type = "aaml_blengths"
+        foreground = "aaml_blengths"
+        
+        og_list = utils.read_ortho_index(index_file, options.min_taxa, True)
+#        utils.read_aaml_phylos(og_list, "/Genomics/kocherlab/berubin/acacias/ant_genomes/comparative/acacia_selection/acacias_aaml_blengths_aaml_blengths", "%s/aaml_compiled" % (options.base_dir), options.outputfile, options.min_taxa)
+        utils.read_aaml_phylos(og_list, "/Genomics/kocherlab/berubin/ants/bees/bees12_selection/bees_aaml_blengths_aaml_blengths", "%s/aaml_compiled" % (options.base_dir), options.outputfile, options.min_taxa)
         sys.exit()
 
     if options.action == "nopara_gene_trees":
@@ -212,8 +290,60 @@ def main():
         utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir, options.foreground)
         sys.exit()
 
-    if options.action == "mk":
-        utils.mk_test(options.inspecies, options.outspecies, ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_dummy_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
+    if options.action == "hyphy_absrel":
+        test_type = "aBSREL"
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        
+        print len(og_list)
+#        print og_list[0:10]
+        og_list = utils.limit_list(og_list, options.min_og_group, options.max_og_group)
+#        og_list = og_list[0:10]
+        print len(og_list)
+        utils.paml_test(og_list, [], test_type, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, "all", test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
+        utils.read_hyphy_absrel(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, "all", test_type), options.base_dir)
+        sys.exit()
+
+    if options.action == "hyphy_ncar":
+        ncar_gff_dic = utils.read_params(options.ncar_gff_params)
+        coding_gff_dic = utils.read_params(options.gff_params)
+        ncar_gff_file = ncar_gff_dic[options.inspecies]
+        coding_gff_file = coding_gff_dic[options.inspecies]
+        ncar_gff = utils.basic_gff(ncar_gff_file)
+        coding_gff = utils.basic_gff(coding_gff_file)
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        ncar_ortho_dic = utils.ncar_ortho_dic(options.ncar_ortho_file, options.min_taxa)
+        inspecies_ncar_dic = utils.inspecies_ncar_translate(ncar_ortho_dic, options.inspecies, ncar_gff)
+        
+        test_type = "hyphy_ncar"
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        
+        ncar_list = utils.ncar_min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        ncar_list = utils.limit_list_ncars(ncar_list, options.min_og_group, options.max_og_group)
+        print len(ncar_list)
+
+#        ncar_list = ncar_list[0:10]
+#        print ncar_list
+#        ncar_list = ['ce10308', 'ce128603', 'ce141120', 'ce142916', 'ce14937', 'ce15561', 'ce156349', 'ce173808', 'ce20265', 'ce203710', 'ce225300', 'ce225303', 'ce225306', 'ce225308', 'ce225309', 'ce226206', 'ce226239', 'ce232728', 'ce245727', 'ce252796', 'ce254313', 'ce26150', 'ce26152', 'ce26153', 'ce26154', 'ce26159', 'ce271998', 'ce300387', 'ce324440', 'ce327441', 'ce328975', 'ce340768', 'ce350279', 'ce365105', 'ce376507', 'ce384958', 'ce387164', 'ce401670', 'ce401671', 'ce401672', 'ce426751', 'ce431990', 'ce457543', 'ce489792', 'ce493831', 'ce519625', 'ce525591', 'ce58859', 'ce87743', 'ce91377']
+        if len(ncar_list) == 0:
+            sys.exit()
+#        utils.hyphy_noncoding(ncar_list, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_all_%s" % (options.base_dir, options.prefix, test_type), options.tree_file, options.num_threads, remove_list, "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), inspecies_ncar_dic, coding_gff, coding_ortho_dic, options.outspecies)
+        utils.read_hyphy_noncoding(ncar_list, "%s/%s_all_%s" % (options.base_dir, options.prefix, test_type), options.base_dir)
+
+        sys.exit()
+        
+
+    if options.action == "hypergeom":
+        utils.hypergeom_test(options.hyper_pop, options.hyper_pop_cond, options.hyper_targets, options.hyper_targets_back)
+        sys.exit()
+
+    if options.action == "rer_hypergeom":
+        utils.rer_hypergeom_test(options.hyper_pop, options.hyper_pop_cond, options.rerconverge_output, 0, 0.05, "fast")
+        utils.rer_hypergeom_test(options.hyper_pop, options.hyper_pop_cond, options.rerconverge_output, 0, 0.05, "slow")
+        utils.rer_hypergeom_test(options.hyper_pop, options.hyper_pop_cond, options.rerconverge_output, 0, 0.01, "fast")
+        utils.rer_hypergeom_test(options.hyper_pop, options.hyper_pop_cond, options.rerconverge_output, 0, 0.01, "slow")
         sys.exit()
 
     if options.action == "hka":
