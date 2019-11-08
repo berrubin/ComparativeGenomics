@@ -140,6 +140,8 @@ This will create a directory at `[base directory]/[output prefix]_[focal taxa li
 
 HyPhy RELAX takes substantial computation time. If this process crashes or is cancelled for some reason, it can be restarted with the same command and work will not be repeated.
 
+If you want to run it such that all branches that are parents to a given set of leaves, and only those leaves, then you can start your comma-separated list of focal taxa with `DAUGHTERS,`. Then all of the leaves listed will be treated as foreground as will all branches in all monophyletic clades made up of only those leaves.
+
 ## Population genomics
 
 MK-test functionality is built into selection_pipeline.py. Several filters are built into the reading of the genotypes provided. First, if a site has genotypes for fewer than 4 individuals, it is not included in the analysis. Second, if all individuals have heterozygous genotypes or are homozygous for an alternative allele, that site is not included. Incomplete genotype calls with only a single allele from an individual called are also excluded before making the determination that all individuals are either homozygous for an alternative allele or heterozygous. So an individual with "0/." is not counted as either heterozygous or homozygous for the reference allele. Anything with a minor allele frequency of less than or equal to 0.1 is not counted as variable as has been done previously (http://www.genetics.org/content/158/3/1227.long, https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3666677/). Also, any alternative allele that only appears once is not considered. However, if just a single individual is homozygous for an alternative allele that is considered.

@@ -279,13 +279,17 @@ def main():
         exclude_paras = True
         manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
         og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+
         print len(og_list)
         if options.foreground == "INTREE":
             fore_list = "INTREE"
 #            cur_og_list = og_list
+        elif options.foreground.startswith("DAUGHTERS"):
+            fore_list = options.foreground.split(",")
         else:
             fore_list = options.foreground.split(",")
 #        og_list = [10724, 11488, 12704, 13036, 13879, 15282]
+        print options.foreground
         utils.paml_test(og_list, fore_list, test_type, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
         utils.read_hyphy_relax(og_list, "%s/%s_%s_%s" % (options.base_dir, options.prefix, options.foreground, test_type), options.base_dir, options.foreground)
         sys.exit()

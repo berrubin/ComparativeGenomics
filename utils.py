@@ -29,7 +29,7 @@ import ete3
 from ete3 import PhyloTree
 from Bio.Phylo.PAML.chi2 import cdf_chi2
 from scipy.stats import chisqprob
-import statsmodels.stats.multitest as smm
+import statsmodels.stats.multitest as smm # this is required for a lot of stuff but is taking forever to load
 from Bio.SeqRecord import SeqRecord
 from Bio import AlignIO
 from StringIO import StringIO
@@ -1872,6 +1872,31 @@ def trim_phylo_hyphy(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
     outfile.write(tree_str)
     outfile.close()
 
+def trim_phylo_alldaughters_hyphy(taxa_list, fore_list, orthogroup, outdir, phylogeny_file):
+    #trims taxa and adds foreground tags for HYPHY analysis tree
+    tree = PhyloTree(phylogeny_file)
+    tree.prune(taxa_list)
+    tree.unroot()
+    for node in tree.traverse("postorder"):
+        good_daughters = 0
+        if node.is_leaf():
+            continue
+        for daughter in node.get_leaves():
+            if daughter.name in fore_list:
+                good_daughters += 1
+        if good_daughters == len(node.get_leaves()):
+            node.name = "{foreground}"
+    tree_str = tree.write(format = 3)
+    tree_str = tree_str.replace("NoName", "")
+    for leaf in tree.get_leaves():
+        cur_tax = leaf.name
+        if cur_tax in fore_list:
+            tree_str = tree_str.replace(cur_tax, "%s{foreground}" % cur_tax)
+    
+    outfile = open("%s/og_%s.tree" % (outdir, orthogroup), 'w')
+    outfile.write(tree_str)
+    outfile.close()
+
 
 def trim_phylo_ancestral_hyphy(taxa_list, orthogroup, outdir, phylogeny_file):
     #trims taxa and adds foreground tags for HYPHY analysis tree
@@ -1903,6 +1928,7 @@ def rename_tree(seqfile, outname, phylogeny_file):
 def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa):
     #formats fasta and tree files for PAML analysis
     print orthogroup
+    print foreground
     tree_prep = True
     terminals = False
     fore_list = []
@@ -1988,9 +2014,13 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
     outfile.close()
     if tree_prep:
         if test_type == "RELAX":
+            print foreground
             if foreground == "INTREE":
 #                shutil.copyfile(phylogeny_file, "%s/og_%s.tree" % (outdir, orthogroup))
                 trim_phylo_ancestral_hyphy(taxa_list, orthogroup, outdir, phylogeny_file)
+            elif foreground[0] == "DAUGHTERS":
+                print "DAUGHT"
+                trim_phylo_alldaughters_hyphy(taxa_list, fore_list[1:], orthogroup, outdir, phylogeny_file)
             else:
                 trim_phylo_hyphy(taxa_list, fore_list, orthogroup, outdir, phylogeny_file)
         else:
