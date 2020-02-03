@@ -180,6 +180,7 @@ class Gene:
                     region_alt_dic[k] = self.alts[k]
         aligned_vars = {}
         zeroed_tuples = self.zeroed_tuples(self.cds_coords)
+#        print region_alt_dic
         for k in region_alt_dic.keys():
             old_coord = k
             new_coord = self.new_coding_coord(aligned_seq, self.cds_coords, zeroed_tuples, old_coord)
@@ -187,6 +188,7 @@ class Gene:
                 aligned_vars[new_coord] = region_alt_dic[k]
             else:
                 aligned_vars[new_coord] = str(Seq.Seq(str(region_alt_dic[k])).reverse_complement())
+#            print "%s\t%s" % (old_coord, new_coord)
         return aligned_vars
                     
 

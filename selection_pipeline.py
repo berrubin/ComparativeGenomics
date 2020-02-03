@@ -48,7 +48,7 @@ parser.add_option("--hyper_pop", dest = "hyper_pop", type = str, help = "All OGs
 parser.add_option("--hyper_pop_cond", dest = "hyper_pop_cond", type = str, help = "All OGs with condition (e.g. all OGs with human orthologs with autism association")
 parser.add_option("--hyper_targets", dest = "hyper_targets", type = str, help = "Focal OGs (e.g. OGs evolving faster in social taxa).")
 parser.add_option("--hyper_targets_back", dest = "hyper_targets_back", type = str, help = "Focal OGs background (e.g. OGs included in test of rate changes).")
-
+parser.add_option("--og_list_file", dest = "og_list_file", type = str, help = "List of OGs to use for analyses")
 
 (options, args) = parser.parse_args()
 
@@ -188,6 +188,46 @@ def main():
         utils.mk_test(options.inspecies, options.outspecies, good_coding_ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, genome_file, coding_gff_file, pickle_dir)
         sys.exit()
 
+    if options.action == "fixed_v_shared":
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        exclude_paras = True
+        og_list = utils.min_taxa_membership({(options.inspecies, options.outspecies) : 2}, {}, [], "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_coding_ortho_dic = {}
+#        og_list = [10644] #11419, 12394, 11141, 11231, 11334, 11341]
+        for og in og_list:
+            good_coding_ortho_dic[og] = coding_ortho_dic[og]
+
+        pickle_dir = options.pickle_dir
+        utils.gather_fixed_v_shared(options.inspecies, options.outspecies, good_coding_ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, pickle_dir)
+        sys.exit()
+
+    if options.action == "fixed_v_shared":
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        exclude_paras = True
+        og_list = utils.min_taxa_membership({(options.inspecies, options.outspecies) : 2}, {}, [], "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_coding_ortho_dic = {}
+#        og_list = [10644] #11419, 12394, 11141, 11231, 11334, 11341]
+        for og in og_list:
+            good_coding_ortho_dic[og] = coding_ortho_dic[og]
+
+        pickle_dir = options.pickle_dir
+        utils.gather_fixed_v_shared(options.inspecies, options.outspecies, good_coding_ortho_dic, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa, pickle_dir)
+        sys.exit()
+
+    if options.action == "pairs_coding_div":
+        coding_ortho_dic = utils.read_orthofile("orthofinder", options.ortho_file) 
+        exclude_paras = True
+        og_list = utils.min_taxa_membership({(options.inspecies, options.outspecies) : 2}, {}, [], "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        good_coding_ortho_dic = {}
+#        og_list = [10644, 11419, 12394, 11141, 11231, 11334, 11341]
+        for og in og_list:
+            good_coding_ortho_dic[og] = coding_ortho_dic[og]
+
+        pickle_dir = options.pickle_dir
+        utils.pairs_coding_div(options.inspecies, options.outspecies, good_coding_ortho_dic, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), options.base_dir, options.num_threads, options.min_taxa)
+        sys.exit()
+
+
     if options.action == "alignment_filter":
         index_file = "%s/%s_ortho.index" % (options.base_dir, options.prefix)
         paras_allowed = True
@@ -274,11 +314,21 @@ def main():
         utils.og_list_goatools(options.goa_forefile, options.goa_backfile, options.go_database, outdir)
         sys.exit()
         
-    if options.action == "hyphy_relax":
+    if options.action == "hyphy_relax":                
         test_type = "RELAX"
         exclude_paras = True
+        og_list = []
         manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
-        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+
+        if options.og_list_file:
+
+            reader = open(options.og_list_file, 'rU')
+            for line in reader:
+                cur_og = int(line.strip())
+                og_list.append(cur_og)
+        else:
+        
+            og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
 
         print len(og_list)
         if options.foreground == "INTREE":
@@ -384,8 +434,23 @@ def main():
         og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
         utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
         cur_og_list = og_list
-        utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list)
+#        utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list)
         sys.exit()
+
+    if options.action == "dnds_matrix":
+        test_type = "free"
+        foreground = "free"
+        cds_dic = utils.read_params(options.param_file)
+        index_file = "%s/%s_ortho_noparas.index" % (options.base_dir, options.prefix)
+        paras_allowed = False
+        og_list = utils.read_ortho_index(index_file, len(cds_dic.keys()), paras_allowed) #Gets only those OGs that have a single sequence for every species in the study. This is for making a sequence matrix that can be used for phylogenetics.
+        og_list = utils.aligned_og_completeness(og_list, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), len(cds_dic.keys()))
+        og_list = og_list[0:10]
+        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, options.outputfile.split(".")[0]), options.tree_file, options.num_threads, options.use_gblocks, len(cds_dic.keys()), [])
+#        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
+#        utils.concatenate_fourf_for_raxml("%s/%s_gene_ancestral" % (options.base_dir, options.prefix), "%s/%s_fourfold.afa" % (options.base_dir, options.prefix), og_list, cds_dic.keys())
+        sys.exit()
+
 
     if options.action == "termfinder":
 #        for species in ["AFLO", "AMEL", "MQUA", "MQUA_apis"]:

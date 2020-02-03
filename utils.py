@@ -224,6 +224,7 @@ def make_og_gene_map(ortho_dic):
 def read_species_pickle(target_species, pickle_dir, gene_or_ncar):
 #    pickle_file = open("/scratch/tmp/berubin/resequencing/%s/genotyping/%s_gene_vcf_dic.pickle_test" % (target_species, target_species), 'rb')
 #    pickle_file = open("/scratch/tmp/berubin/resequencing/hic/%s/genotyping/%s_gene_vcf_dic.pickle" % (target_species, target_species), 'rb')
+#    pickle_file = open("%s/testset_%s_%s_vcf_dic.pickle" % (pickle_dir, target_species, gene_or_ncar), 'rb')
     pickle_file = open("%s/%s_%s_vcf_dic.pickle" % (pickle_dir, target_species, gene_or_ncar), 'rb')
     gene_objects = pickle.load(pickle_file)
     pickle_file.close()
@@ -1829,6 +1830,292 @@ def fixed_sub_types(inspecies, outspecies, og_num, align_dir, inseq, outseq, in_
 
     return syn_count, nsyn_count        
 
+def pairs_coding_div(inspecies, outspecies, ortho_dic, align_dir, basedir, num_threads, min_taxa):
+    if not os.path.exists("%s/paired_cds_div/" % (basedir)):
+        os.mkdir("%s/paired_cds_div/" % (basedir)) 
+    outfile = open("%s/paired_cds_div/%s_%s_cds_div.txt" % (basedir, inspecies, outspecies), 'w')
+    total_sames = 0
+    total_diffs = 0
+    for og_num in ortho_dic.keys():
+        if len(ortho_dic[og_num].keys()) < min_taxa:
+            continue
+        if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+            continue
+        if ortho_dic[og_num][inspecies][0].count(inspecies) > 1 or ortho_dic[og_num][outspecies][0].count(outspecies) > 1:
+            continue
+        if not len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]) == 1:
+            continue
+        inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
+        outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
+        inseq, outseq = get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies, "gene")
+        seq_dic = get_fsa_aligned_dic(align_dir, og_num, "gene")
+
+        if prop_shared_sequence(inseq, outseq) < 0.9 or prop_shared_sequence(outseq, inseq) < 0.9:
+            continue
+        inseq = inseq.upper()
+        outseq = outseq.upper()
+        x = 0
+        same_count = 0
+        diff_count = 0
+        
+        while x < len(inseq):
+            if inseq[x] in ["-", "N"] or outseq[x] in ["-", "N"]:
+                x += 1
+                continue
+            if inseq[x] == outseq[x]:
+                same_count += 1
+                total_sames += 1
+            elif inseq[x] != outseq[x]:
+                diff_count += 1
+                total_diffs += 1
+            x += 1
+        outfile.write("OG_%s\t%s\t%s\t%s\n" % (og_num, same_count, diff_count, float(diff_count) / (same_count + diff_count)))
+    outfile.close()
+    print "%s\t%s\t%s\t%s\t%s" % (inspecies, outspecies, total_sames, total_diffs, float(total_diffs) / (total_sames + total_diffs))
+
+def gather_fixed_v_shared(inspecies, outspecies, ortho_dic, align_dir, basedir, num_threads, min_taxa, pickle_dir):
+    if not os.path.exists("%s/fixed_v_shared/" % (basedir)):
+        os.mkdir("%s/fixed_v_shared/" % (basedir))
+
+    in_gene_dic = read_species_pickle(inspecies, pickle_dir, "gene")
+    print "%s gene pickle read" % inspecies
+    out_gene_dic = read_species_pickle(outspecies, pickle_dir.replace(inspecies, outspecies), "gene")
+    print "%s gene pickle read" % outspecies
+    outfile = open("%s/fixed_v_shared/%s_%s_polys.txt" % (basedir, inspecies, outspecies), 'w')
+    outfile.write("OG\tps\tpn\tshare_s\tshare_n\n")
+    prop_shared = 0
+    starting = 0
+    nearest = 0
+    total_syn = 0
+    total_nsyn = 0
+    total_shared_syn = 0
+    total_shared_nsyn = 0
+    for og_num in ortho_dic.keys():
+#        print "OG %s" % og_num
+#        if og_num != 7:
+#            continue
+        if len(ortho_dic[og_num].keys()) < min_taxa:
+            continue
+        if inspecies not in ortho_dic[og_num] or outspecies not in ortho_dic[og_num]:
+            continue
+        if ortho_dic[og_num][inspecies][0].count(inspecies) > 1 or ortho_dic[og_num][outspecies][0].count(outspecies) > 1:
+            continue
+#        if includes_paralogs(ortho_dic[og_num]):
+#            continue
+        if len(ortho_dic[og_num][inspecies]) == 1 and len(ortho_dic[og_num][outspecies]) == 1:
+            starting += 1
+            inspecies_gene = ortho_dic[og_num][inspecies][0][:-3]
+            outspecies_gene = ortho_dic[og_num][outspecies][0][:-3]
+            inseq, outseq = get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies, "gene")
+
+            seq_dic = get_fsa_aligned_dic(align_dir, og_num, "gene")
+            inseq = seq_dic[inspecies]
+
+            if prop_shared_sequence(inseq, outseq) < 0.9 or prop_shared_sequence(outseq, inseq) < 0.9:
+                prop_shared += 1
+                continue
+            in_gene = in_gene_dic[inspecies_gene]
+            out_gene = out_gene_dic[outspecies_gene]
+
+            if in_gene.cds_average_n < 4 or out_gene.cds_average_n < 4:
+                continue
+#            fix_syn, fix_nsyn = count_sub_types(inseq, outseq)
+            poly_syn, poly_nsyn, shared_syns, shared_nsyns = fixed_v_shared_subs(inspecies, outspecies, og_num, align_dir, inseq, outseq, in_gene, out_gene)
+            total_nsyn += poly_nsyn
+            total_syn += poly_syn
+            total_shared_syn += shared_syns
+            total_shared_nsyn += shared_nsyns
+
+#             in_poly_syn = float(in_gene.syn_count) 
+#             in_poly_nsyn = float(in_gene.nsyn_count) 
+#             if in_poly_syn == -1 or in_poly_nsyn == -1:
+#                 continue
+#             in_potent_syn = float(in_gene.potent_syn)
+#             in_potent_nsyn = float(in_gene.potent_nsyn)
+#             in_n_size = float(in_gene.average_n) 
+#             if inspecies == "LALB":
+#                 insample = in_n_size
+#             else:
+#                 insample = in_n_size * 2
+# #            if (fix_syn + fix_nsyn) / (in_potent_syn + in_poten_nsyn) > 0.05:
+# #                continue
+# #            if insample < 5:
+# #                continue
+#             pis = in_poly_syn / float(in_potent_syn)
+#             pin = in_poly_nsyn / float(in_potent_nsyn)
+#             if pis > 0 and pin > 0:
+#                 pinpis = pin / pis
+# #                pinpis_table.write("%s\t%s\n" % ("\t".join(str(og_num)), str(pinpis)))
+#                 pinpis_table.write("%s\t%s\n" % (str(og_num),
+#                                                 str(pinpis)))
+            outfile.write("OG_%s\t%s\t%s\t%s\t%s\n" % (og_num, poly_syn, poly_nsyn, shared_syns, shared_nsyns))#, in_poly_syn, in_poly_nsyn))
+#    pinpis_table.close()
+    outfile.close()
+    print "%s\t%s\t%s\t%s\t%s\t%s" % (inspecies, outspecies, total_syn, total_nsyn, total_shared_syn, total_shared_nsyn)
+#    print nearest
+#    print starting
+#    print prop_shared
+
+
+def fixed_v_shared_subs(inspecies, outspecies, og_num, align_dir, inseq, outseq, in_gene, out_gene):
+    inseq, outseq = get_fsa_aligned_seqs(align_dir, og_num, inspecies, outspecies, "gene")
+    in_gene_alt_dic = in_gene.coding_fixed_align(inseq)
+    out_gene_alt_dic = out_gene.coding_fixed_align(outseq)
+    temp_dic = {}
+    for k, v in in_gene_alt_dic.items():
+        if len(v) == 1:
+            temp_dic[k] = v
+    in_gene_alt_dic = temp_dic
+    temp_dic = {}
+    for k, v in out_gene_alt_dic.items():
+        if len(v) == 1:
+            temp_dic[k] = v
+    out_gene_alt_dic = temp_dic
+#    print in_gene_alt_dic
+#    print out_gene_alt_dic
+    nsyn_count = 0
+    syn_count = 0
+    same_codons = 0
+    x = 0
+    shared_polys = 0
+    shared_syns = 0
+    shared_nsyns = 0
+    while x < len(inseq):
+        #ignore codons with more than one divergent site (Bin's thing)
+        diff_count = 0
+        missing_data = False
+        for cod_index in range(3):
+            if inseq[x+cod_index] in ["N", "-"] or outseq[x+cod_index] in ["N", "-"]:
+                x = x + 3
+                missing_data = True
+                break
+        if missing_data:
+            continue
+
+        incodon_list = []
+        outcodon_list = []
+        has_variant = False
+        if in_gene.strand == 1:
+            ingap_count = inseq[0:x].count("-")
+        else:
+            ingap_count = -1*inseq[x:].count("-")
+        if out_gene.strand == 1:
+            outgap_count = outseq[0:x].count("-")
+        else:
+            outgap_count = -1*outseq[x:].count("-")
+        for cod_index in range(3):
+            incodon_list.append([inseq[x+cod_index].upper()])
+            outcodon_list.append([outseq[x+cod_index].upper()])
+            if x+cod_index-ingap_count in in_gene_alt_dic.keys():
+                incodon_list[cod_index].append(str(in_gene_alt_dic[x+cod_index-ingap_count]).upper())
+                has_variant = True
+            if x+cod_index-outgap_count in out_gene_alt_dic.keys():
+                outcodon_list[cod_index].append(str(out_gene_alt_dic[x+cod_index-outgap_count]).upper())
+        if not has_variant:
+            x = x+3
+            continue
+        overlap = 0
+        overlap_incodon = list(inseq[x:x+3])
+        overlap_outcodon = list(outseq[x:x+3])
+        variant_sites = 0
+        
+        #remove codons with multiple variants
+        for cur_site in incodon_list:
+            if len(cur_site) > 1:
+                variant_sites += 1
+        if variant_sites > 1:
+            x = x+3
+            continue
+
+        variant_sites = 0
+        for cur_site in outcodon_list:
+            if len(cur_site) > 1:
+                variant_sites += 1
+        if variant_sites > 1:
+            x = x+3
+            continue
+
+        #is incodon variant syn or nonsyn
+        ref_allele = []
+        alt_allele = []
+        for cur_site in incodon_list:
+            if len(cur_site) > 1:
+                ref_allele.append(cur_site[0])
+                alt_allele.append(cur_site[1])
+            else:
+                ref_allele.append(cur_site[0])
+                alt_allele.append(cur_site[0])
+        ref_allele = "".join(ref_allele)
+        alt_allele = "".join(alt_allele)
+        is_syn = True
+        if str(Seq.Seq(ref_allele).translate()) != str(Seq.Seq(alt_allele).translate()):
+            is_syn = False
+            
+                                   
+        if is_syn:
+            syn_count += 1
+        else:
+            nsyn_count += 1
+        # print x
+        # print is_syn
+        # print incodon_list
+        # print outcodon_list
+
+
+        for cur_site in range(len(incodon_list)):
+            poly_overlap = 0
+            for nuc in incodon_list[cur_site]:
+                if nuc in outcodon_list[cur_site]:
+                    poly_overlap += 1
+                    
+            if poly_overlap > 1:
+                shared_polys += 1
+                if is_syn:
+                    shared_syns += 1
+                else:
+                    shared_nsyns += 1
+#                 print in_gene.name
+#                 print out_gene.name
+# #            if len(incodon_list[cur_site]) > 1 or len(outcodon_list[cur_site]) > 1:
+
+#                 print x
+#                 print poly_overlap
+#                 print incodon_list
+#                 print outcodon_list
+                
+#                    overlap_incodon[cur_site] = nuc
+#                    overlap_outcodon[cur_site] = nuc
+                    #if there is overlap at a site then just got to next site
+                    #don't need to keep checking current site
+#                    break
+
+        incodon = "".join(overlap_incodon)
+        outcodon = "".join(overlap_outcodon)
+#        print incodon
+#        print outcodon
+        # if incodon == outcodon:
+        #     same_codons += 1
+        # else:
+        #     num_diffs = 0
+        #     for cod_index in range(3):
+        #         if incodon[cod_index] != outcodon[cod_index]:
+        #             num_diffs += 1
+        #     if num_diffs == 1:
+        #         inaa = str(Seq.Seq(incodon).translate())
+        #         outaa = str(Seq.Seq(outcodon).translate())
+        #         if inaa == outaa:
+        #             syn_count += 1
+        #         else:
+        #             nsyn_count += 1
+#        print syn_count
+#        print nsyn_count
+        x = x + 3
+#    print in_gene_alt_dic
+#    print out_gene_alt_dic
+
+    return syn_count, nsyn_count, shared_syns, shared_nsyns
+
+
 def remove_stops(seq):
     x = 0
     while x < len(seq):
@@ -1924,6 +2211,17 @@ def rename_tree(seqfile, outname, phylogeny_file):
     outfile = open(outname, 'w')
     outfile.write(tree_str)
     outfile.close()
+
+def aligned_og_completeness(og_list, align_dir, min_taxa):
+    new_og_list = []
+    for og in og_list:
+        reader = SeqIO.parse("%s/og_cds_%s.afa" % (align_dir, og), format = 'fasta')
+        seq_dic = {}
+        for rec in reader:
+            seq_dic[rec.id] = str(rec.seq)
+        if len(seq_dic) >= min_taxa:
+            new_og_list.append(og)
+    return new_og_list
 
 def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa):
     #formats fasta and tree files for PAML analysis
@@ -3011,7 +3309,7 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
         if test_type == "model_d":
             prep_paml_files(cur_og, indir, outdir, "model_d", phylogeny_file, test_type, use_gblocks)
         elif test_type == "free":
-            no_stops = prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file, test_type, min_taxa, use_gblocks)
+            no_stops = prep_paml_files(cur_og, indir, outdir, "free", phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
             if not no_stops:
                 print "OG %s appears to have unexpected stop codons" % cur_og
                 continue
@@ -3052,6 +3350,7 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
 #        if ifshort != "too short":
 #        paml_tests.ncar_ancestor_reconstruction([cur_og, outdir])
         work_list.append([cur_og, outdir])
+#        paml_tests.relax_worker([cur_og, outdir])
 #        paml_tests.absrel_worker([cur_og, outdir])
 #        paml_tests.aaml_worker([cur_og, outdir])
     if test_type == "bs":
