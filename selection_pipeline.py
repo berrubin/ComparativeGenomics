@@ -422,9 +422,14 @@ def main():
         sys.exit()
 
     if options.action == "yn_dnds":
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.yn_estimates(og_list, "%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file, options.min_taxa, options.use_gblocks)
+#        paras_allowed = True
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        print len(og_list)
+        og_list = og_list[0:10]
+#        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+        utils.yn_estimates(og_list, "%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_yn" % (options.base_dir, options.prefix), options.tree_file, options.min_taxa, options.use_gblocks, remove_list)
         sys.exit()
 
     if options.action == "gc_content":
@@ -439,11 +444,16 @@ def main():
         test_type = "free"
         foreground = "free"
         get_dn_ds = True
-        paras_allowed = True
-        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
-        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks)
+        exclude_paras = True
+        manda_taxa, multi_taxa, remove_list = utils.make_taxa_dic(options.taxa_inclusion)
+        og_list = utils.min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_filtered.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
+        print len(og_list)
+        og_list = og_list[0:10]
+#        og_list = utils.read_ortho_index(index_file, options.min_taxa, paras_allowed)
+
+#        utils.paml_test(og_list, foreground, test_type,"%s/%s_fsa_coding_jarvis_columnfilt_seqfilt_noparas" % (options.base_dir, options.prefix), "%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), options.tree_file, options.num_threads, options.use_gblocks, options.min_taxa, remove_list)
         cur_og_list = og_list
-#        utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), ortho_dic, "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.timetree, cur_og_list)
+        utils.read_frees("%s/%s_%s_%s" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s_%s_%s_results" % (options.base_dir, options.prefix, foreground, test_type), "%s/%s.gaf" % (options.base_dir, options.prefix), "%s/%s_%s_%s_go" % (options.base_dir, options.prefix, foreground, test_type), get_dn_ds, options.tree_file, cur_og_list)
         sys.exit()
 
     if options.action == "dnds_matrix":

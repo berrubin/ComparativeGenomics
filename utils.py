@@ -2291,6 +2291,17 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
         outfile = open("%s/ncar_%s.afa" % (outdir, orthogroup), 'w')
     else:
         outfile = open("%s/og_cds_%s.afa" % (outdir, orthogroup), 'w')
+        for species, sequence in seq_dic.items():
+            if len(sequence) % 3 > 0:
+                outfile.close()
+                print "Not divisible by 3 %s" % orthogroup
+                return False
+            if str(Seq.Seq(sequence.replace("-", "N")).translate()).count("*") > 1:
+                outfile.close()
+                print "Too many stop codons %s" % orthogroup
+                return False
+        
+            
     if foreground == "aaml_blengths":
         outfile.write("%s %s\n" % (len(seq_dic), len(rec.seq) / 3))
     elif test_type not in ["RELAX", "aBSREL"]:
@@ -2299,6 +2310,9 @@ def prep_paml_files(orthogroup, indir, outdir, foreground, phylogeny_file, test_
         if foreground == "aaml_blengths":
             outfile.write("%s\n%s\n" % (species[0:4], str(Seq.Seq(sequence.replace("-", "N")).translate())))
         elif foreground == "free" or foreground == "yn":
+            if len(sequence) % 3 > 0:
+                print species
+                print str(Seq.Seq(sequence.replace("-", "N")).translate())
             if str(Seq.Seq(sequence.replace("-", "N")).translate()).count("*") > 0:
                 outfile.close()
                 print "Too many stop codons in %s %s" % (species, orthogroup)
@@ -2579,7 +2593,7 @@ def standardize_to_time(target_dic, ref_tree):
         standard_dic[k] = v / ref_tree.get_leaves_by_name(k)[0].dist
     return standard_dic
 
-def read_frees(indir, outdir, database_file, ortho_dic, go_dir, get_dn_ds, time_tree, og_list):
+def read_frees(indir, outdir, database_file, go_dir, get_dn_ds, time_tree, og_list):
     #reads free ratios files and gets dn/ds ratios
     #can be easily extended to get dn and ds but those are low quality
     soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}
@@ -5898,7 +5912,7 @@ def og_list_termfinder(forefile, backfile, database_file, ortho_dic, go_dir, sig
     back_list = external_list(backfile, -1, -1)
     run_termfinder(fore_list, back_list, database_file, ortho_dic, go_dir)
 
-def yn_estimates(og_list,indir, outdir, tree_file, min_taxa, use_gblocks):
+def yn_estimates(og_list,indir, outdir, tree_file, min_taxa, use_gblocks, remove_list):
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
     if not os.path.isdir("%s_results" % outdir):
@@ -5908,7 +5922,7 @@ def yn_estimates(og_list,indir, outdir, tree_file, min_taxa, use_gblocks):
     ds_dic = {}
     species_pairs = []
     for cur_og in og_list:
-        good_align = prep_paml_files(cur_og, indir, outdir, "yn", tree_file, "yn", min_taxa, use_gblocks)
+        good_align = prep_paml_files(cur_og, indir, outdir, "yn", tree_file, "yn", min_taxa, use_gblocks, remove_list)
         print cur_og
         if not good_align:
             continue
@@ -6176,7 +6190,7 @@ def read_hyphy_noncoding(ncar_list, indir, outdir):
     outfile.close()
 
 
-def read_frees_subset(indir, outdir, database_file, ortho_dic, go_dir, get_dn_ds, time_tree, og_list, subset_list):
+def read_frees_subset(indir, outdir, database_file, go_dir, get_dn_ds, time_tree, og_list, subset_list):
     #reads free ratios files and gets dn/ds ratios
     #can be easily extended to get dn and ds but those are low quality
     soc_sol_pairs = {"LMAR":"LFIG", "LZEP":"LVIE", "LPAU":"LOEN", "AAUR":"APUR"}

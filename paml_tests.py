@@ -161,7 +161,7 @@ def encprime(gene_name, cds_seq, flank_seq, outdir):
 def relax_worker(param_list):
     orthogroup = param_list[0]
     workingdir = param_list[1]
-    cmd = ["HYPHYMP", "CPU=1", "/usr/local/hyphy/2.3.11/lib/hyphy/TemplateBatchFiles/SelectionAnalyses/RELAX.bf", "Universal", "%s/og_cds_%s.afa" % (workingdir, orthogroup), "%s/og_%s.tree" % (workingdir, orthogroup), "foreground", "All"]
+    cmd = ["HYPHYMP", "CPU=1", "/usr/local/hyphy/2.3.11/lib/hyphy/TemplateBatchFiles/SelectionAnalyses/RELAX.bf", "Universal", "%s/og_cds_%s.afa" % (workingdir, orthogroup), "%s/og_%s.tree" % (workingdir, orthogroup), "foreground", "Minimal"]
     with open("%s/og_%s_relax_unlabeledback.txt" % (workingdir, orthogroup), 'w') as outfile:
         subprocess.call(cmd, stdout = outfile)
     outfile.close()
