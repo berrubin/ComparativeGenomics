@@ -386,12 +386,14 @@ def main():
         ncar_list = utils.ncar_min_taxa_membership(manda_taxa, multi_taxa, remove_list, "%s/%s_ncar_ortho.index" % (options.base_dir, options.prefix), options.min_taxa, exclude_paras)
         ncar_list = utils.limit_list_ncars(ncar_list, options.min_og_group, options.max_og_group)
         print len(ncar_list)
-
+#        ncar_list = ["ce128829"]
 #        ncar_list = ncar_list[0:10]
 #        print ncar_list
 #        ncar_list = ['ce10308', 'ce128603', 'ce141120', 'ce142916', 'ce14937', 'ce15561', 'ce156349', 'ce173808', 'ce20265', 'ce203710', 'ce225300', 'ce225303', 'ce225306', 'ce225308', 'ce225309', 'ce226206', 'ce226239', 'ce232728', 'ce245727', 'ce252796', 'ce254313', 'ce26150', 'ce26152', 'ce26153', 'ce26154', 'ce26159', 'ce271998', 'ce300387', 'ce324440', 'ce327441', 'ce328975', 'ce340768', 'ce350279', 'ce365105', 'ce376507', 'ce384958', 'ce387164', 'ce401670', 'ce401671', 'ce401672', 'ce426751', 'ce431990', 'ce457543', 'ce489792', 'ce493831', 'ce519625', 'ce525591', 'ce58859', 'ce87743', 'ce91377']
+
         if len(ncar_list) == 0:
             sys.exit()
+
 #        utils.hyphy_noncoding(ncar_list, "%s/%s_fsa_ncar" % (options.base_dir, options.prefix), "%s/%s_all_%s" % (options.base_dir, options.prefix, test_type), options.tree_file, options.num_threads, remove_list, "%s/%s_gene_ancestral" % (options.base_dir, options.prefix), inspecies_ncar_dic, coding_gff, coding_ortho_dic, options.outspecies)
         utils.read_hyphy_noncoding(ncar_list, "%s/%s_all_%s" % (options.base_dir, options.prefix, test_type), options.base_dir)
 

@@ -3332,9 +3332,9 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                 cur_out_dir = "%s/ncar_%s" % (outdir, cur_og)
             else:
                 cur_out_dir = "%s/OG_%s" % (outdir, cur_og)
-            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
+            is_codons = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "aaml_blengths":
-            prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
+            is_codons = prep_paml_files(cur_og, indir, outdir, "aaml_blengths", phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "RELAX":
             if os.path.exists("%s/og_%s_relax_unlabeledback.txt" % (outdir, cur_og)):
                 finished = False
@@ -3344,7 +3344,7 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                         finished = True
                 if finished:
                     continue
-            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
+            is_codons = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
         elif test_type == "aBSREL":
             if os.path.exists("%s/og_%s_absrel.txt" % (outdir, cur_og)):
                 finished = False
@@ -3354,16 +3354,19 @@ def paml_test(og_list, foreground, test_type, indir, outdir, phylogeny_file, num
                         finished = True
                 if finished:
                     continue
-            prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
+            is_codons = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, min_taxa, use_gblocks, exclude_taxa)
 
         else:
             taxon_present = prep_paml_files(cur_og, indir, outdir, foreground, phylogeny_file, test_type, use_gblocks)
             if not taxon_present:
                 continue
             ifshort = taxon_present
+        if is_codons:
 #        if ifshort != "too short":
 #        paml_tests.ncar_ancestor_reconstruction([cur_og, outdir])
-        work_list.append([cur_og, outdir])
+
+            work_list.append([cur_og, outdir])
+    print work_list
 #        paml_tests.relax_worker([cur_og, outdir])
 #        paml_tests.absrel_worker([cur_og, outdir])
 #        paml_tests.aaml_worker([cur_og, outdir])
@@ -3554,9 +3557,9 @@ def hyphy_noncoding_worker(param_list):
             print "trimal failed on %s. Continuing with next locus." % ncar
             return
     print ncar
-    print "getting neighbors"
+#    print "getting neighbors"
     neighbors = neighbor_genes(target_coord, coding_coords)
-    print "neighbors gotten"
+#    print "neighbors gotten"
     if len(neighbors) < 4:
         print "too few neighbors: %s" % ncar
         return
@@ -3612,6 +3615,7 @@ def hyphy_noncoding_worker(param_list):
     consolidated_file = False
     for leaf in tree.get_leaves():
         skip_run = False
+        consolidated_file = False
         if leaf.name == outspecies:
             continue
         if os.path.exists("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf.name)):
@@ -3620,7 +3624,7 @@ def hyphy_noncoding_worker(param_list):
             if len(filelines) > 0:
                 last_line = filelines[-1].strip()
                 if last_line.startswith("|--------|"):
-                    print "already done: %s %s" % (ncar, leaf.name)
+#                    print "already done: %s %s" % (ncar, leaf.name)
                     skip_run = True
         if not skip_run and os.path.exists("%s/hyphy_%s/tip_outputs.txt" % (outdir, ncar)):
             reader = open("%s/hyphy_%s/tip_outputs.txt" % (outdir, ncar), 'rU')
@@ -3632,7 +3636,7 @@ def hyphy_noncoding_worker(param_list):
  #                   print cur_tip
 #                    print leaf.name
                     if cur_tip == leaf.name:
-                        print "start counting: %s" % leaf.name
+#                        print "start counting: %s" % leaf.name
                         start_counting = True
                         continue
                 if start_counting:
@@ -3640,19 +3644,20 @@ def hyphy_noncoding_worker(param_list):
                 if start_counting:
                     if line.startswith(ncar) or line.strip() == "-------------------------------":
                         if line_count > 10:
-                            print "already done: %s %s" % (ncar, leaf.name)
+#                            print "already done: %s %s" % (ncar, leaf.name)
                             skip_run = True
                             consolidated_file = True
                             break
         cmd = ["HYPHYMP", "CPU=1", "/Genomics/kocherlab/berubin/local/src/TestForPositiveSelection/nonCodingSelection.bf", "Intronicsites",  "%s/hyphy_%s/%s_fourf.afa" % (outdir, ncar, ncar), "%s/hyphy_%s/%s.tree" % (outdir, ncar, ncar), "Yes", leaf.name, "%s/hyphy_%s/%s.afa" % (outdir, ncar, ncar), "Null2-Alternate2", "NEB"]
         if not skip_run:
-            print "starting hyphy: %s %s" % (ncar, leaf.name)
+#            print "starting hyphy: %s %s" % (ncar, leaf.name)
             
 #            print leaf.name
             with open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf.name), 'w') as outfile:
                 subprocess.call(cmd, stdout = outfile)
             outfile.close()
         if not consolidated_file:
+#            print "no consolidation %s" % leaf.name
             locus_file = open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf.name), 'rU')
             cur_p, null_zeta, alt_zeta_back, alt_zeta_fore, pos_list = read_hyphy_noncoding_branch(locus_file.readlines())
         else:
@@ -3688,36 +3693,77 @@ def hyphy_noncoding_worker(param_list):
         if len(leaves) == 1:
             node_num += 1
             continue
-        else:
-            leaf_list = []
-            for leaf in leaves:
-                leaf_list.append(leaf.name)
-            test_node_str = "Node" + str(node_num)
-            leaf_str = ",".join(leaf_list)
-#            test_node_list.append(test_node_str)
-#            node_name_dic[test_node_str] = leaf_str
-            if os.path.exists("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str)):
-                reader = open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'rU')
-                filelines = reader.readlines()
-                if len(filelines) > 0:
-                    last_line = filelines[-1].strip()
-                    if last_line.startswith("|--------|"):
-                        skip_run = True
+        leaf_list = []
+        for leaf in leaves:
+            leaf_list.append(leaf.name)
+        test_node_str = "Node" + str(node_num)
+        leaf_str = ",".join(leaf_list)
+        if os.path.exists("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str)):
+            reader = open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'rU')
+            filelines = reader.readlines()
+            if len(filelines) > 0:
+                last_line = filelines[-1].strip()
+                if last_line.startswith("|--------|"):
+#                    print "already done: %s %s" % (ncar, leaf_str) 
+                    skip_run = True
+        if not skip_run and os.path.exists("%s/hyphy_%s/branch_outputs.txt" % (outdir, ncar)):
+            reader = open("%s/hyphy_%s/branch_outputs.txt" % (outdir, ncar), 'rU')
+            start_counting = False
+            line_count = 0
+            for line in reader:
+                if line.startswith(ncar) and not start_counting:
+                    cur_tip = line.strip().split("_")[1]
+                    if cur_tip == leaf_str:
+#                        print "start counting: %s" % leaf_str
+                        start_counting = True
+                        continue
+                if start_counting:
+                    line_count += 1
+                if start_counting:
+                    if line.startswith(ncar) or line.strip() == "-------------------------------":
+                        if line_count > 10:
+#                            print "already done: %s %s" % (ncar, leaf_str)
+                            skip_run = True
+                            consolidated_file = True
+                            break
 
-            cmd = ["HYPHYMP", "CPU=1", "/Genomics/kocherlab/berubin/local/src/TestForPositiveSelection/nonCodingSelection.bf", 'Intronicsites',  "%s/hyphy_%s/%s_fourf.afa" % (outdir, ncar, ncar), "%s/hyphy_%s/%s.tree" % (outdir, ncar, ncar), "Yes", test_node_str, "%s/hyphy_%s/%s.afa" % (outdir, ncar, ncar), "Null2-Alternate2", "NEB"]
-            if not skip_run:
-                with open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'w') as outfile:
-                    subprocess.call(cmd, stdout = outfile)
-                outfile.close()
-            node_num += 1
+
+        cmd = ["HYPHYMP", "CPU=1", "/Genomics/kocherlab/berubin/local/src/TestForPositiveSelection/nonCodingSelection.bf", 'Intronicsites',  "%s/hyphy_%s/%s_fourf.afa" % (outdir, ncar, ncar), "%s/hyphy_%s/%s.tree" % (outdir, ncar, ncar), "Yes", test_node_str, "%s/hyphy_%s/%s.afa" % (outdir, ncar, ncar), "Null2-Alternate2", "NEB"]
+        if not skip_run:
+            with open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'w') as outfile:
+                subprocess.call(cmd, stdout = outfile)
+            outfile.close()
+
+
+
+        if not consolidated_file:
             locus_file = open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'rU')
             cur_p, null_zeta, alt_zeta_back, alt_zeta_fore, pos_list = read_hyphy_noncoding_branch(locus_file.readlines())
-            p_list.append(cur_p)
-            null_zeta_list.append(null_zeta)
-            alt_zeta_back_list.append(alt_zeta_back)
-            alt_zeta_fore_list.append(alt_zeta_fore)
-            pos_select_list.append(len(pos_list))
-            branch_list.append(leaf_str)
+        else:
+            locus_switch = False
+            locus_lines = []
+            consol_file = open("%s/hyphy_%s/branch_outputs.txt" % (outdir, ncar), 'rU')
+            for line in consol_file:
+                if line.startswith("%s_%s" % (ncar, leaf_str)):
+                    locus_switch = True
+                if locus_switch:
+                    if line.strip() == "-------------------------------":
+                        locus_switch = False
+                        break
+                    locus_lines.append(line)
+            cur_p, null_zeta, alt_zeta_back, alt_zeta_fore, pos_list = read_hyphy_noncoding_branch(locus_lines)
+
+
+
+#            node_num += 1
+#            locus_file = open("%s/hyphy_%s/%s_%s_noncodingselection.txt" % (outdir, ncar, ncar, leaf_str), 'rU')
+#            cur_p, null_zeta, alt_zeta_back, alt_zeta_fore, pos_list = read_hyphy_noncoding_branch(locus_file.readlines())
+        p_list.append(cur_p)
+        null_zeta_list.append(null_zeta)
+        alt_zeta_back_list.append(alt_zeta_back)
+        alt_zeta_fore_list.append(alt_zeta_fore)
+        pos_select_list.append(len(pos_list))
+        branch_list.append(leaf_str)
     pval_corr = smm.multipletests(p_list, alpha = 0.1, method = 'fdr_bh')[1]
     outmiddle = open("%s/%s_noncodingselection_summary.txt" % (outdir, ncar), 'w')
     for x in range(len(branch_list)):
@@ -6167,6 +6213,7 @@ def read_hyphy_noncoding(ncar_list, indir, outdir):
     outfile.write("NCAR\tP\tNCARcorr_P\talltests_P\tnull_zeta\talt_zeta_back\talt_zeta_fore\tnode\n")
     line_list = []
     p_list = []
+    neg_list = []
     for cur_ncar in ncar_list:
         print cur_ncar
         if not os.path.exists("%s/%s_noncodingselection_summary.txt" % (indir, cur_ncar)):
@@ -6181,12 +6228,19 @@ def read_hyphy_noncoding(ncar_list, indir, outdir):
                 continue
             line_list.append(cur_line)
             p_list.append(float(cur_line[1]))
+
+#            if float(cur_line[1]) < 0:
+#                neg_list.append(cur_line)
+#            else:
+
     pval_corr = smm.multipletests(p_list, alpha = 0.1, method = 'fdr_bh')[1]
     for x in range(len(pval_corr)):
         line_list[x].insert(3, pval_corr[x])
     line_list.sort(key = lambda x: x[1])
     for locus in line_list:
         outfile.write("\t".join([str(i) for i in locus]) + "\n")
+#    for locus in neg_list:
+#        outfile.write("\t".join([str(i) for i in locus]) + "\n")
     outfile.close()
 
 
